@@ -61,7 +61,7 @@ class Cell:
         #print( "DFBF = ", dfbf.shape, "  mean= ", np.mean(dfbf), "     hitThresh = ", hitThresh )
 
     def psth( self, b0 = 80, b1 = 90 ):
-        peakSeparation = 5
+        peakSeparation = 2
 
         hitVec = np.zeros( self.dfbf.shape[1] )
         psth = np.zeros( self.dfbf.shape[1] )
@@ -71,12 +71,15 @@ class Cell:
         for trial in self.dfbf:
             baseline = np.mean( trial[b0:b1] )
             sdev = np.std( trial[b0:b1] )
-            psth += trial - baseline # Note this includes bad trials.
             #print( "p", end = "" )
             #sys.stdout.flush()
 
             if sdev <= 0.0:
                 continue
+            psth += trial
+            if np.any( np.isinf( psth ) ):
+                print( "INFFFFF   ", trial )
+                quit()
             hitVec += ((trial - baseline)/ sdev > self.sdevThresh )
 
         # Do a convolution for hitVec
@@ -105,15 +108,6 @@ class Cell:
             mn = np.min( t, axis = 0 )
             assert( len( mx ) == len( trial ) - window )
             ret += ( (mx -mn) > sdev )
-
-            #print( "SDEV = ", sdev )
-            '''
-            if len(trial) > window:
-                for i in range( len( trial ) - window ):
-                    if ( np.max( trial[i:i+window] ) - np.min( trial[i:i+window] ) ) > sdev:
-                        ret[i] += 1.0
-            '''
-
         #print("{}    ".format(ret[96]), end = "")
         return (ret / len( self.dfbf )) > self.hitThresh
 
@@ -190,7 +184,12 @@ def main():
                     if not 'dfbf' in dat:
                         print( "BAAAAAD: ",  mouseName + "/" + date + "/" + matfile )
                         continue
+                    # current version of numpy doesn't handle posinf
+                    #dfbf = np.nan_to_num( dat['dfbf'], posinf = 0.0, neginf = 0.0 )
                     dfbf = np.nan_to_num( dat['dfbf'] )
+                    dfbf[ np.isinf( dfbf ) ] = 0.0
+                    dfbf[ dfbf > 1e6 ] = 0.0
+                    dfbf[ dfbf < -1e6 ] = 0.0
                     #cells, trials, frames = dfbf.shape
                     #print( "Found: {}/{}/{}.mat with {} cells, {} trials and {} frames".format( mouseName, date, spl[0], cells, trials, frames ) )
                     print( ".", end = "" )
@@ -246,6 +245,7 @@ def main():
     ax1.plot( np.arange( len( totalPkPos ) ), totalPkPos, label = "Pk pos" )
     ax1.legend()
     ax2 = plt.subplot( 3, 1, 2 )
+    print( totalPSTH )
     ax2.plot( np.arange( len( totalPSTH ) ), totalPSTH, label = "PSTH" )
     ax2.legend()
     ax3 = plt.subplot( 3, 1, 3 )
