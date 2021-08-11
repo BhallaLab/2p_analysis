@@ -65,6 +65,9 @@ class Cell:
 
         hitVec = np.zeros( self.dfbf.shape[1] )
         psth = np.zeros( self.dfbf.shape[1] )
+
+        #return [], psth
+
         for trial in self.dfbf:
             baseline = np.mean( trial[b0:b1] )
             sdev = np.std( trial[b0:b1] )
@@ -92,15 +95,26 @@ class Cell:
 
     def hits( self, b0 = 80, b1 = 90 ):
         window = 3
-        ret = np.zeros( self.dfbf.shape[1] )
+        ret = np.zeros( self.dfbf.shape[1] - window )
         for trial in self.dfbf:
             sdev = np.std( trial[b0:b1] ) * self.sdevThresh
+            t = np.zeros( (window, len(trial) - window) )
+            for i in range( window ):
+                t[i] = trial[i:-window+i]
+            mx = np.max( t, axis = 0 )
+            mn = np.min( t, axis = 0 )
+            assert( len( mx ) == len( trial ) - window )
+            ret += ( (mx -mn) > sdev )
+
             #print( "SDEV = ", sdev )
+            '''
             if len(trial) > window:
                 for i in range( len( trial ) - window ):
                     if ( np.max( trial[i:i+window] ) - np.min( trial[i:i+window] ) ) > sdev:
                         ret[i] += 1.0
+            '''
 
+        #print("{}    ".format(ret[96]), end = "")
         return (ret / len( self.dfbf )) > self.hitThresh
 
 
@@ -132,8 +146,9 @@ class Session:
         return numSig, pkPos, totPSTH, totHits
 
 class Mouse:
-    def __init__( self, trends ):
-        self.trends = trends
+    def __init__( self, sessions ):
+        self.sessions = sorted( sessions )
+        self.numBehav = 0
 
     def analyzeTrends():
         return np.zeros(len( trends ) )
@@ -159,13 +174,15 @@ def main():
     totalPkPos = np.zeros( NUM_FRAMES )
     totalPSTH = np.zeros( NUM_FRAMES )
     totalHits = np.zeros( NUM_FRAMES )
+    mouse = {}
+
     for mouseName in imagingMice:
         print( "\nMouse: ", mouseName )
+        sessions = {}
         for date in os.listdir( args.basepath + mouseName ):
             if len(date) != 8:
                 continue
             countSession = 0
-            sessions = {}
             for matfile in os.listdir( args.basepath + mouseName + "/" + date + "/" ):
                 if checkDataFileName( mouseName, date, matfile ):
                     cells = []
@@ -187,7 +204,6 @@ def main():
 
                     sessions[date] = Session( mouseName, date, cells )
             numSessions += countSession
-            #mouse[mouseName] = Mouse( sessions )
             behavBaseDir = args.basepath + mouseName + "/" + date + "/behaviour/"
             if not "behaviour" in os.listdir( args.basepath + mouseName + "/" + date ):
                 #print( "WARNING: No behaviour in: ", mouseName + "/" + date )
@@ -203,7 +219,11 @@ def main():
                                     print( "b", end = "" )
                                     numBehaviour += 1
 
-        for i, s in enumerate( sorted( sessions ) ):
+        print( "\nAnalyze Mouse: ", mouseName )
+        for i, s in enumerate( sessions ):
+            #print( "\nanalyzing mouse {} sess {}  ".format( mouseName, i ) )
+            print( "a", end = "" )
+            sys.stdout.flush()
             sess = sessions[s]
             sess.setIndex( i )
             ns, pkPos, psth, hits = sess.analyze()
@@ -211,9 +231,10 @@ def main():
             totalPkPos += pkPos
             totalPSTH[:len(psth)] += psth
             totalHits[:len(hits)] += hits
-            print( "hits = ", hits )
+            #print( "hits = ", hits )
             # What I really want to do is to attach each analysis output to the
             # behavioural stage. For now I just have sequential day of recording.
+        mouse[ mouseName ] = Mouse( sessions )
 
     print( "\nNUM MICE = ", len(imagingMice), "NUM_SESSIONS = ", numSessions, "NUM_BEHAVIOUR", numBehaviour )
     print( "NUM SIG = ", numSig, " num Cells = ", numCells )
