@@ -27,30 +27,41 @@ behav_sessions = ["All1", "All3", "SoAn1", "An1", "An2", "An3", "Hr7"]
 # hrishkeshn/imaging_Sorted_for_Analysis/ImageAnalysis/G405/20210321/1/G405_20210321_behav.mat
 
 
+def checkSoumyaDataFileName( mouse, date, fname ):
+    return (mouse + "_" + date in fname) and ("_wholeTrial_B" in fname) and fname[-4:] == ".mat" # for Soumya
+
+def checkHrishiDataFileName( mouse, date, fname ):
+    return fname == mouse + "_" + date + ".mat" # for Hrishi
+
+class Context:
+    def __init__( self, name, imagingMice = [], behaviourMice = [], dataDirectory = "", fileNamePrefix = "", checkFname = checkSoumyaDataFileName ):
+        self.name = name
+        self.imagingMice = imagingMice
+        self.behavourMice = behaviourMice
+        self.dataDirectory = dataDirectory
+        self.fileNamePrefix = fileNamePrefix
+        self.checkFname = checkFname
+
+soumyaContext = Context( "soumya", 
+    imagingMice = ['G141', 'G142', 'G313', 'G377', 'G71'],
+    behaviourMice = ['G141', 'G142', 'G313', 'G377', 'G71'],
+    dataDirectory = "/home1/bhalla/soumyab/CalciumDataAnalysisResults/Preprocessed_files/",
+    fileNamePrefix = "wholeTrial_B",
+    checkFname = checkSoumyaDataFileName )
 
 
-# storage.ncbs.res.in/soumyab/BehaviourData_camera/g5_791
+hrishiContext = Context( "hrishi", 
+    imagingMice = ['G394', 'G396', 'G404', 'G405', 'G407', 'G408', 'G409'],
+    behaviourMice=['G394', 'G396', 'G404', 'G405', 'G407', 'G408', 'G409'],
+    dataDirectory = "/home1/bhalla/hrishikeshn/Imaging_Sorted_for_Analysis/Suite2p_analysis/",
+    fileNamePrefix = "2D",
+    checkFname = checkHrishiDataFileName )
 
-# Uncomment for Soumya analysis.
-imagingMice = ['G141', 'G142', 'G313', 'G377', 'G71']
-behaviourMice = ['G141', 'G142', 'G313', 'G377', 'G71']
-dataDirectory = "/home1/bhalla/soumyab/CalciumDataAnalysisResults/Preprocessed_files/"
-fileNamePrefix = "wholeTrial_B"
-'''
-# uncomment for Hrishi analysis.
-dataDirectory = "/home1/bhalla/hrishikeshn/Imaging_Sorted_for_Analysis/Suite2p_analysis/"
-imagingMice = ['G394', 'G396', 'G404', 'G405', 'G407', 'G408', 'G409']
-behaviourMice = ['G394', 'G396', 'G404', 'G405', 'G407', 'G408', 'G409']
-fileNamePrefix = "2D"
-'''
+dataContext = soumyaContext
 
 imagingSessionNames = ['1', '2', '3']
 NUM_FRAMES = 240
 hitKernel = np.array( [0.25, 0.5, 0.25] )
-
-def checkDataFileName( mouse, date, fname ):
-    #return fname == mouse + "_" + date + ".mat" # for Hrishi
-    return (mouse + "_" + date in fname) and ("_wholeTrial_B" in fname) and fname[-4:] == ".mat" # for Soumya
 
 class Cell:
     def __init__( self, index, dfbf, sdevThresh = 3.0, hitThresh = 30.0 ):
@@ -123,40 +134,58 @@ class Session:
         self.index = idx
 
     def analyze( self ):
-        pkPos = np.zeros( NUM_FRAMES )
-        totPSTH = np.zeros( NUM_FRAMES )
-        totHits = np.zeros( NUM_FRAMES )
-        numSig = 0
+        self.pkPos = np.zeros( NUM_FRAMES )
+        self.totPSTH = np.zeros( NUM_FRAMES )
+        self.totHits = np.zeros( NUM_FRAMES )
+        self.numSig = 0
         for c in self.cells:
             pk, psth = c.psth()
-            numSig += (len( pk ) > 0 )
+            self.numSig += (len( pk ) > 0 )
             for p in pk:
-                pkPos[p] += 1
+                self.pkPos[p] += 1
 
-            totPSTH[:len(psth)] += psth
+            self.totPSTH[:len(psth)] += psth
             hits = c.hits()
-            totHits[:len(hits)] += hits
+            self.totHits[:len(hits)] += hits
 
-        return numSig, pkPos, totPSTH, totHits
+        return self.numSig, self.pkPos, self.totPSTH, self.totHits
 
 class Mouse:
     def __init__( self, sessions ):
-        self.sessions = sorted( sessions )
+        # Make a list of sessions sorted by date.
+        self.sessions = sorted(sessions.items(), key = lambda kv: kv[0])
         self.numBehav = 0
+
+    def analyze( self ):
+        self.totPkPos = np.zeros( NUM_FRAMES )
+        self.totPSTH = np.zeros( NUM_FRAMES )
+        self.totHits = np.zeros( NUM_FRAMES )
+        self.numSig = 0
+        for s in self.sessions:
+            self.numSig += s[1].numSig
+            self.totPkPos[:len(s[1].pkPos)] += s[1].pkPos
+            self.totPSTH[:len(s[1].totPSTH)] += s[1].totPSTH
+            self.totHits[:len(s[1].totHits)] += s[1].totHits
 
     def analyzeTrends():
         return np.zeros(len( trends ) )
 
 
 def main():
+    global dataContext
     parser = argparse.ArgumentParser( description = "This is a dispatcher program for sweeping through the a 2P dataset and executing an analysis pipeline" )
-    parser.add_argument( "-b", "--basepath", type = str, help = "Optional: Base path for data. It is organized:\n basePath/Imaging/mouse_name/date/trial and\n basePath/Behaviour/mouse_name/date/trial ", default = dataDirectory )
+    parser.add_argument( "-b", "--basepath", type = str, help = "Optional: Base path for data. It is organized as follows:\n basePath/Imaging/mouse_name/date/trial and\n basePath/Behaviour/mouse_name/date/trial ", default = soumyaContext.dataDirectory )
     parser.add_argument( "-st", "--sdev_thresh",  type = float, help = "Optional: Threshold of number of sdevs that the signal must have in order to count as a hit trial.", default = 2.0 )
     parser.add_argument( "-ht", "--hit_trial_thresh",  type = float, help = "Optional: Threshold of percentage of hit trials that each session must have in order to count as significant PSTH response.", default = 30.0 )
     parser.add_argument( "--trace_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [96, 99], metavar = ("start_frame", "end frame")  )
     parser.add_argument( "--baseline_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [80, 90], metavar = ("start_frame", "end frame")  )
+    parser.add_argument( "-c", "--context", type = str, help = "Optional: Data context. Options are hrishi, soumya and synthetic", default = "soumya" )
     args = parser.parse_args()
 
+    if args.context == "soumya":
+        dataContext = soumyaContext
+    elif args.context == "hrishi":
+        dataContext = hrishiContext
 
     trends = []
     psth_params = [args.sdev_thresh, args.hit_trial_thresh] + args.trace_frames + args.baseline_frames
@@ -170,17 +199,17 @@ def main():
     totalHits = np.zeros( NUM_FRAMES )
     mouse = {}
 
-    for mouseName in imagingMice:
+    for mouseName in dataContext.imagingMice:
         print( "\nMouse: ", mouseName )
         sessions = {}
-        for date in os.listdir( args.basepath + mouseName ):
+        for date in os.listdir( dataContext.dataDirectory + mouseName ):
             if len(date) != 8:
                 continue
             countSession = 0
-            for matfile in os.listdir( args.basepath + mouseName + "/" + date + "/" ):
-                if checkDataFileName( mouseName, date, matfile ):
+            for matfile in os.listdir( dataContext.dataDirectory + mouseName + "/" + date + "/" ):
+                if dataContext.checkFname( mouseName, date, matfile ):
                     cells = []
-                    dat = loadmat( args.basepath + mouseName + "/" + date + "/" + matfile )
+                    dat = loadmat( dataContext.dataDirectory + mouseName + "/" + date + "/" + matfile )
                     if not 'dfbf' in dat:
                         print( "BAAAAAD: ",  mouseName + "/" + date + "/" + matfile )
                         continue
@@ -203,8 +232,8 @@ def main():
 
                     sessions[date] = Session( mouseName, date, cells )
             numSessions += countSession
-            behavBaseDir = args.basepath + mouseName + "/" + date + "/behaviour/"
-            if not "behaviour" in os.listdir( args.basepath + mouseName + "/" + date ):
+            behavBaseDir = dataContext.dataDirectory + mouseName + "/" + date + "/behaviour/"
+            if not "behaviour" in os.listdir( dataContext.dataDirectory + mouseName + "/" + date ):
                 #print( "WARNING: No behaviour in: ", mouseName + "/" + date )
                 print( "x", end = "")
             else:
@@ -235,22 +264,28 @@ def main():
             # behavioural stage. For now I just have sequential day of recording.
         mouse[ mouseName ] = Mouse( sessions )
 
-    print( "\nNUM MICE = ", len(imagingMice), "NUM_SESSIONS = ", numSessions, "NUM_BEHAVIOUR", numBehaviour )
+    print( "\nNUM MICE = ", len(dataContext.imagingMice), "NUM_SESSIONS = ", numSessions, "NUM_BEHAVIOUR", numBehaviour )
     print( "NUM SIG = ", numSig, " num Cells = ", numCells )
     #print( "Pk Pos = ", totalPkPos )
     #print( "PSTH = ", totalPSTH )
 
-    plt.figure( figsize = ( 7, 12 ))
-    ax1 = plt.subplot( 3, 1, 1 )
+    plt.figure( figsize = ( 7, 16 ))
+    ax1 = plt.subplot( 4, 1, 1 )
     ax1.plot( np.arange( len( totalPkPos ) ), totalPkPos, label = "Pk pos" )
     ax1.legend()
-    ax2 = plt.subplot( 3, 1, 2 )
-    print( totalPSTH )
+    ax2 = plt.subplot( 4, 1, 2 )
+    #print( totalPSTH )
     ax2.plot( np.arange( len( totalPSTH ) ), totalPSTH, label = "PSTH" )
     ax2.legend()
-    ax3 = plt.subplot( 3, 1, 3 )
+    ax3 = plt.subplot( 4, 1, 3 )
     ax3.plot( np.arange( len( totalHits ) ), totalHits, label = "Hits" )
     ax3.legend()
+    ax4 = plt.subplot( 4, 1, 4 )
+    for mouseName, mouse in mouse.items():
+        print( "re-Analyzing mouse:", mouseName )
+        mouse.analyze()
+        ax4.plot( np.arange( len( mouse.totHits ) ), mouse.totHits, label = mouseName )
+    ax4.legend()
 
 
     plt.show()
