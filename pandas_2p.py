@@ -122,7 +122,23 @@ def main():
                     dfbf2 = dfbf.reshape(sh[0] * sh[1], -1 )
                     #print("SHAPE2 = ", dfbf2.shape )
                     df = pd.DataFrame(dfbf2, index=[idx1, idx2])
-                    frames.append( pd.DataFrame(dfbf2, index=[idx1, idx2]) )
+                    # I want to build stdev of values below 80 percentile.
+                    perc = np.percentile( dfbf2, 80, axis = 1 )
+                    #np.std(np.ma.masked_where( b > np.repeat(pec,5).reshape( 20, 5 ), b ),1)
+                    ax1, ax2 = dfbf2.shape
+                    #print( "  DFBF2 = ", dfbf2.shape, sh[0], sh[1], ax1, ax2 )
+                    maskedDfbf2 = np.ma.masked_where( dfbf2 > np.repeat(perc, ax2 ).reshape( ax1, ax2 ), dfbf2 )
+                    sd = np.std( maskedDfbf2, 1 )
+                    mn = np.mean( maskedDfbf2, 1 )
+                    #sd = np.std(np.ma.masked_where( dfbf2 > np.repeat(perc, ax2 ).reshape( ax1, ax2 ), dfbf2 ),1)
+                    #print( "SHAPE = ", sd.shape, "  DFBF2 = ", dfbf2.shape )
+                    df['sdev80'] = sd
+                    df['mean80'] = mn
+                    df['pk1'] = np.max( dfbf2, 1 ) / sd
+                    df['pk1pos'] = np.argmax( dfbf2, axis = 1 )
+                    # np.ix_ does something
+                    #print( "NEWCOLS = ", df['pk1pos'] )
+                    frames.append( df )
                     dates.append( date )
                     #print( df.head() )
                     #print( df.tail() )
