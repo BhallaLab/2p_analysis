@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.io import loadmat
+import time
 import sys
 import os
 import argparse
@@ -64,114 +65,6 @@ dataContext = soumyaContext
 imagingSessionNames = ['1', '2', '3']
 NUM_FRAMES = 240
 hitKernel = np.array( [0.25, 0.5, 0.25] )
-
-class Cell:
-    def __init__( self, index, dfbf, sdevThresh = 3.0, hitThresh = 30.0 ):
-        self.index = index
-        self.dfbf = dfbf
-        self.sdevThresh = sdevThresh
-        self.hitThresh = hitThresh / 100.0 # convert from percent.
-        #print( "DFBF = ", dfbf.shape, "  mean= ", np.mean(dfbf), "     hitThresh = ", hitThresh )
-
-    def psth( self, b0 = 80, b1 = 90 ):
-        peakSeparation = 2
-
-        hitVec = np.zeros( self.dfbf.shape[1] )
-        psth = np.zeros( self.dfbf.shape[1] )
-
-        #return [], psth
-
-        for trial in self.dfbf:
-            baseline = np.mean( trial[b0:b1] )
-            sdev = np.std( trial[b0:b1] )
-            #print( "p", end = "" )
-            #sys.stdout.flush()
-
-            if sdev <= 0.0:
-                continue
-            psth += trial
-            if np.any( np.isinf( psth ) ):
-                print( "INFFFFF   ", trial )
-                quit()
-            hitVec += ((trial - baseline)/ sdev > self.sdevThresh )
-
-        # Do a convolution for hitVec
-        smooth = np.convolve( hitVec, hitKernel, mode = "same" )
-        # Go through and find peak times. They have to be separated by a window.
-        pk = []
-        while max( smooth ) > self.hitThresh:
-            pk1 = np.argmax( smooth )
-            lo = max( 0, pk1 - peakSeparation )
-            hi = min( len( smooth ), pk1 + peakSeparation )
-            smooth[ lo:hi] = 0.0
-            pk.append( pk1 )
-
-        #print("PSTH =======",  psth )
-        return pk, psth
-
-    def hits( self, b0 = 80, b1 = 90 ):
-        window = 3
-        ret = np.zeros( self.dfbf.shape[1] - window )
-        for trial in self.dfbf:
-            sdev = np.std( trial[b0:b1] ) * self.sdevThresh
-            t = np.zeros( (window, len(trial) - window) )
-            for i in range( window ):
-                t[i] = trial[i:-window+i]
-            mx = np.max( t, axis = 0 )
-            mn = np.min( t, axis = 0 )
-            assert( len( mx ) == len( trial ) - window )
-            ret += ( (mx -mn) > sdev )
-        #print("{}    ".format(ret[96]), end = "")
-        return (ret / len( self.dfbf )) > self.hitThresh
-
-
-class Session:
-    def __init__( self, mouseName, date, cells ):
-        self.date = date
-        self.cells = cells
-        self.mouseName = mouseName
-        self.idx = 0
-
-    def setIndex( self, idx ):
-        self.index = idx
-
-    def analyze( self ):
-        self.pkPos = np.zeros( NUM_FRAMES )
-        self.totPSTH = np.zeros( NUM_FRAMES )
-        self.totHits = np.zeros( NUM_FRAMES )
-        self.numSig = 0
-        for c in self.cells:
-            pk, psth = c.psth()
-            self.numSig += (len( pk ) > 0 )
-            for p in pk:
-                self.pkPos[p] += 1
-
-            self.totPSTH[:len(psth)] += psth
-            hits = c.hits()
-            self.totHits[:len(hits)] += hits
-
-        return self.numSig, self.pkPos, self.totPSTH, self.totHits
-
-class Mouse:
-    def __init__( self, sessions ):
-        # Make a list of sessions sorted by date.
-        self.sessions = sorted(sessions.items(), key = lambda kv: kv[0])
-        self.numBehav = 0
-
-    def analyze( self ):
-        self.totPkPos = np.zeros( NUM_FRAMES )
-        self.totPSTH = np.zeros( NUM_FRAMES )
-        self.totHits = np.zeros( NUM_FRAMES )
-        self.numSig = 0
-        for s in self.sessions:
-            self.numSig += s[1].numSig
-            self.totPkPos[:len(s[1].pkPos)] += s[1].pkPos
-            self.totPSTH[:len(s[1].totPSTH)] += s[1].totPSTH
-            self.totHits[:len(s[1].totHits)] += s[1].totHits
-
-    def analyzeTrends():
-        return np.zeros(len( trends ) )
-
 
 def main():
     global dataContext
@@ -268,7 +161,9 @@ def main():
     print( "NUM SIG = ", numSig, " num Cells = ", numCells )
     #print( "Pk Pos = ", totalPkPos )
     #print( "PSTH = ", totalPSTH )
+    t0 = time.time()
     fullSet.to_hdf("store_2p.h5", "table", format = "fixed", append=False)
+    print( "Time to save = ", time.time() - t0 )
     #fullSet.to_csv("store_2p.csv", float_format = "%4f" )
 
     '''
