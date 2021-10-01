@@ -121,7 +121,16 @@ def main():
                     idx2 = [ i % sh[1] for i in range( sh[0] * sh[1] ) ]
                     dfbf2 = dfbf.reshape(sh[0] * sh[1], -1 )
                     #print("SHAPE2 = ", dfbf2.shape )
+                    '''
                     df = pd.DataFrame(dfbf2, index=[idx1, idx2])
+                    '''
+                    csFrame = 93
+                    usFrame = 97
+                    cols = [[csFrame, usFrame]] * sh[0]*sh[1]
+                    df = pd.DataFrame( cols, columns = ["csFrame", "usFrame"], index=[idx1, idx2] )
+                    df["frames"] = dfbf2.tolist()
+                        
+
                     # I want to build stdev of values below 80 percentile.
                     perc = np.percentile( dfbf2, 80, axis = 1 )
                     #np.std(np.ma.masked_where( b > np.repeat(pec,5).reshape( 20, 5 ), b ),1)
