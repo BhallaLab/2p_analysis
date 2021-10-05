@@ -64,7 +64,26 @@ dataContext = soumyaContext
 
 imagingSessionNames = ['1', '2', '3']
 NUM_FRAMES = 240
+PEAKHALFWIDTH = 3   # Number of frames to be half-width of any Ca peak.
 hitKernel = np.array( [0.25, 0.5, 0.25] )
+
+def findAndIsolateFramePeak( dfbf2, startFrame, endFrame, halfWidth ):
+    '''
+    # Returns value and position of peak in specified window, and
+    # zeroes out dfbf2 in width around the peak, but within window.
+    # Indexing: dfbf2[ cell*trial, frame]
+    '''
+    window = dfbf2[:,:,startFrame:endFrame]
+    peakVal = np.max( window, 1 )
+    peakPos = np.argmax( window, axis = 1 ) + startFrame
+    # Now zero out the vicinity of the peakPos to do the isolation
+    i0 = max( peakPos - halfWidth, startFrame )
+    i1 = min( peakPos + halfWidth, endFrame )
+    for j in range( i0, i1 ):
+        dfbf2[:,j] = 0
+
+    return peakVal, peakPos + startFrame
+
 
 def main():
     global dataContext
@@ -114,7 +133,8 @@ def main():
                     # current version of numpy doesn't handle posinf
                     #dfbf = np.nan_to_num( dat['dfbf'], posinf = 0.0, neginf = 0.0 )
                     dfbf = dat['dfbf']
-                    # Reshape into columns of time and rows of (cell,trial)
+                    # dfbf[cell, trial, frame]
+                    # Reshape into columns of frame and rows of (cell,trial)
                     sh = dfbf.shape
                     # Do integer division
                     idx1 = [ i // sh[1] for i in range( sh[0] * sh[1] ) ]
@@ -143,9 +163,17 @@ def main():
                     #print( "SHAPE = ", sd.shape, "  DFBF2 = ", dfbf2.shape )
                     df['sdev80'] = sd
                     df['mean80'] = mn
-                    df['pk1'] = np.max( dfbf2, 1 ) / sd
-                    df['pk1pos'] = np.argmax( dfbf2, axis = 1 )
-                    # np.ix_ does something
+                    df['prePk1'], df['prePos1'] = findAndIsolateFramePeak( dfbf2, 0, csFrame -1, PEAKHALFWIDTH )
+                    df['prePk2'], df['prePos2'] = findAndIsolateFramePeak( dfbf2, 0, csFrame -1, PEAKHALFWIDTH )
+                    df['csPk'], df['csPkPos'] = findAndIsolateFramePeak( dfbf2, csFrame, usFrame, PEAKHALFWIDTH )
+                    df['postPk1'], df['postPos1'] = findAndIsolateFramePeak( dfbf2, usFrame, len( dfbf2[0] ),PEAKHALFWIDTH )
+                    df['postPk2'], df['postPos2'] = findAndIsolateFramePeak( dfbf2, usFrame, len( dfbf2[0] ), PEAKHALFWIDTH )
+                    print( df.head() )
+
+
+                    quit()
+
+
                     #print( "NEWCOLS = ", df['pk1pos'] )
                     frames.append( df )
                     dates.append( date )
