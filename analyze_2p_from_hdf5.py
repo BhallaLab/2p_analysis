@@ -16,7 +16,6 @@ hitKernel = np.array( [0.25, 0.5, 0.25] )
 
 
 def main():
-    global dataContext
     parser = argparse.ArgumentParser( description = "This is a program for analyzing a 2P dataset stored in hdf5 format" )
     parser.add_argument( "-f", "--filename", type = str, help = "Required: Name of hdf5 file. ", default = "store_2p.h5" )
     parser.add_argument( "-st", "--sdev_thresh",  type = float, help = "Optional: Threshold of number of sdevs that the signal must have in order to count as a hit trial.", default = 2.0 )
@@ -30,6 +29,7 @@ def main():
     #pd.read_hdf("store_tl.h5", "table", where=["index>2"])
     dataset = pd.read_hdf(args.filename, "table")
     print( "Time to load = ", time.time() - t0 )
+    return dataset
 
 if __name__ == '__main__':
     main()
