@@ -9,6 +9,9 @@ import time
 import sys
 import os
 import argparse
+import seaborn as sns
+
+sns.set()
 
 imagingSessionNames = ['1', '2', '3']
 NUM_FRAMES = 240
@@ -29,7 +32,33 @@ def main():
     #pd.read_hdf("store_tl.h5", "table", where=["index>2"])
     dataset = pd.read_hdf(args.filename, "table")
     print( "Time to load = ", time.time() - t0 )
+    #sns.pairplot( dataset.loc['G141','20190913'][['prePk1','prePos1','csPk','csPkPos','postPk1','postPos1']], hue='csPk' )
+
+    #plt.show()
     return dataset
+
+
+def addColumns( df ):
+
+    # I want to build stdev of values below 80 percentile.
+    perc = np.percentile( dfbf2, 80, axis = 1 )
+    #np.std(np.ma.masked_where( b > np.repeat(pec,5).reshape( 20, 5 ), b ),1)
+    ax1, ax2 = dfbf2.shape
+    #print( "  DFBF2 = ", dfbf2.shape, sh[0], sh[1], ax1, ax2 )
+    maskedDfbf2 = np.ma.masked_where( dfbf2 > np.repeat(perc, ax2 ).reshape( ax1, ax2 ), dfbf2 )
+    sd = np.std( maskedDfbf2, 1 )
+    mn = np.mean( maskedDfbf2, 1 )
+    #sd = np.std(np.ma.masked_where( dfbf2 > np.repeat(perc, ax2 ).reshape( ax1, ax2 ), dfbf2 ),1)
+    #print( "SHAPE = ", sd.shape, "  DFBF2 = ", dfbf2.shape )
+    df['sdev80'] = sd
+    df['mean80'] = mn
+    df['prePk1'], df['prePos1'] = findAndIsolateFramePeak( dfbf2, 0, csFrame -1, PEAKHALFWIDTH )
+    df['prePk2'], df['prePos2'] = findAndIsolateFramePeak( dfbf2, 0, csFrame -1, PEAKHALFWIDTH )
+    df['csPk'], df['csPkPos'] = findAndIsolateFramePeak( dfbf2, csFrame, usFrame, PEAKHALFWIDTH )
+    df['postPk1'], df['postPos1'] = findAndIsolateFramePeak( dfbf2, usFrame, len( dfbf2[0] ),PEAKHALFWIDTH )
+    df['postPk2'], df['postPos2'] = findAndIsolateFramePeak( dfbf2, usFrame, len( dfbf2[0] ), PEAKHALFWIDTH )
+    print( df.head() )
+
 
 if __name__ == '__main__':
     main()

@@ -156,30 +156,10 @@ def main():
                     #np.std(np.ma.masked_where( b > np.repeat(pec,5).reshape( 20, 5 ), b ),1)
                     ax1, ax2 = dfbf2.shape
                     #print( "  DFBF2 = ", dfbf2.shape, sh[0], sh[1], ax1, ax2 )
-                    maskedDfbf2 = np.ma.masked_where( dfbf2 > np.repeat(perc, ax2 ).reshape( ax1, ax2 ), dfbf2 )
-                    sd = np.std( maskedDfbf2, 1 )
-                    mn = np.mean( maskedDfbf2, 1 )
-                    #sd = np.std(np.ma.masked_where( dfbf2 > np.repeat(perc, ax2 ).reshape( ax1, ax2 ), dfbf2 ),1)
-                    #print( "SHAPE = ", sd.shape, "  DFBF2 = ", dfbf2.shape )
-                    df['sdev80'] = sd
-                    df['mean80'] = mn
-                    df['prePk1'], df['prePos1'] = findAndIsolateFramePeak( dfbf2, 0, csFrame -1, PEAKHALFWIDTH )
-                    df['prePk2'], df['prePos2'] = findAndIsolateFramePeak( dfbf2, 0, csFrame -1, PEAKHALFWIDTH )
-                    df['csPk'], df['csPkPos'] = findAndIsolateFramePeak( dfbf2, csFrame, usFrame, PEAKHALFWIDTH )
-                    df['postPk1'], df['postPos1'] = findAndIsolateFramePeak( dfbf2, usFrame, len( dfbf2[0] ),PEAKHALFWIDTH )
-                    df['postPk2'], df['postPos2'] = findAndIsolateFramePeak( dfbf2, usFrame, len( dfbf2[0] ), PEAKHALFWIDTH )
-                    print( df.head() )
 
-
-                    quit()
-
-
-                    #print( "NEWCOLS = ", df['pk1pos'] )
                     frames.append( df )
                     dates.append( date )
-                    #print( df.head() )
-                    #print( df.tail() )
-                    cells, trials, numframes = dfbf.shape
+                    #cells, trials, numframes = dfbf.shape
                     #print( "Found: {}/{}/{} with {} cells, {} trials and {} frames".format( mouseName, date, matfile, cells, trials, numframes ) )
                     print( ".", end = "" )
                     sys.stdout.flush()
