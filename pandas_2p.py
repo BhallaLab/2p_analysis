@@ -66,6 +66,7 @@ imagingSessionNames = ['1', '2', '3']
 NUM_FRAMES = 240
 PEAKHALFWIDTH = 3   # Number of frames to be half-width of any Ca peak.
 hitKernel = np.array( [0.25, 0.5, 0.25] )
+BEHAV_KEYS = ["DIRECTION", "FEC", "probeTrials", "camera", "microscope", "LED", "PUFF", "eyeClosure", "MOTION1", "SPEED" ]
 
 def findAndIsolateFramePeak( dfbf2, startFrame, endFrame, halfWidth ):
     '''
@@ -113,13 +114,15 @@ def main():
     totalHits = np.zeros( NUM_FRAMES )
     mouse = {}
 
-    mouseFrames = []
     sessionFrames = []
+    behavSessionFrames = []
     mouseNameList = []
     for mouseName in dataContext.imagingMice:
         print( "\nMouse: ", mouseName )
         frames = []
         dates = []
+        bframes = []
+        bdates = []
         for date in os.listdir( dataContext.dataDirectory + mouseName ):
             if len(date) != 8:
                 continue
@@ -151,9 +154,6 @@ def main():
                     df["frames"] = dfbf2.tolist()
                         
 
-                    # I want to build stdev of values below 80 percentile.
-                    perc = np.percentile( dfbf2, 80, axis = 1 )
-                    #np.std(np.ma.masked_where( b > np.repeat(pec,5).reshape( 20, 5 ), b ),1)
                     ax1, ax2 = dfbf2.shape
                     #print( "  DFBF2 = ", dfbf2.shape, sh[0], sh[1], ax1, ax2 )
 
@@ -181,21 +181,34 @@ def main():
                                 if spl[0].find("_fec") != -1:
                                     #print( "Behav: {}/{}.mat".format( behavDir, matfile ) )
                                     print( "b", end = "" )
+                                    bdat = loadmat( behavBaseDir + behavDir + "/" + matfile )
+                                    if not 'FEC' in bdat:
+                                        print( "Bad Behaviour: ",  mouseName + "/" + date + "/" + matfile )
+                                        continue
+                                    #bk = [ np.transpose(np.array(bdat[key])).tolist() for key in BEHAV_KEYS]
+                                    bk = [ bdat[key] for key in BEHAV_KEYS]
+                                    bkt =[[row[i] for row in bk] for i in range(len(bk[0]))]
+                                    bdf = pd.DataFrame( bkt, columns = BEHAV_KEYS )
+                                    bframes.append( bdf )
+                                    bdates.append( date )
                                     numBehaviour += 1
 
         sessionFrames.append( pd.concat( frames, keys = dates ) )
+        if len( bframes) > 0:
+            behavSessionFrames.append( pd.concat( bframes, keys = bdates ) )
         mouseNameList.append( mouseName )
         print( "\nAnalyze Mouse: ", mouseName )
     print( "KEYS ==========",  mouseNameList, "    NUM-frames = ", len( sessionFrames ), "  ", len( mouseNameList ) )
     fullSet = pd.concat( sessionFrames, keys = mouseNameList )
-    #fullSet = pd.concat( sessionFrames )
+    behavSet = pd.concat( behavSessionFrames, keys = mouseNameList )
 
     print( "\nNUM MICE = ", len(dataContext.imagingMice), "NUM_SESSIONS = ", numSessions, "NUM_BEHAVIOUR", numBehaviour )
     print( "NUM SIG = ", numSig, " num Cells = ", numCells )
     #print( "Pk Pos = ", totalPkPos )
     #print( "PSTH = ", totalPSTH )
     t0 = time.time()
-    fullSet.to_hdf("store_2p.h5", "table", format = "fixed", append=False)
+    fullSet.to_hdf("store_2p.h5", "2pData", format = "fixed", append=False, mode = "w" )
+    behavSet.to_hdf("store_2p.h5", "behavData", format = "fixed", append=False, mode = "a" )
     print( "Time to save = ", time.time() - t0 )
     #fullSet.to_csv("store_2p.csv", float_format = "%4f" )
 
