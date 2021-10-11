@@ -15,6 +15,7 @@ sns.set()
 
 imagingSessionNames = ['1', '2', '3']
 NUM_FRAMES = 240
+PEAK_HALF_WIDTH = 3
 hitKernel = np.array( [0.25, 0.5, 0.25] )
 
 
@@ -30,16 +31,49 @@ def main():
 
     t0 = time.time()
     #pd.read_hdf("store_tl.h5", "table", where=["index>2"])
-    dataset = pd.read_hdf(args.filename, "table")
+    p2data = pd.read_hdf(args.filename, "2pData")
+    behavData = pd.read_hdf(args.filename, "behavData")
     print( "Time to load = ", time.time() - t0 )
+    addColumns( p2data )
     #sns.pairplot( dataset.loc['G141','20190913'][['prePk1','prePos1','csPk','csPkPos','postPk1','postPos1']], hue='csPk' )
 
     #plt.show()
-    return dataset
+    return p2data, behavData
+
+
+def findAndIsolateFramePeak( dfbf2, startFrame, endFrame, halfWidth ):
+    '''
+    # Returns value and position of peak in specified window, and
+    # zeroes out dfbf2 in width around the peak, but within window.
+    # Indexing: dfbf2[ cell*trial, frame]
+    '''
+    peakVal = [] 
+    peakPos = [] 
+    j = 0
+    for d, s, e in zip( dfbf2, startFrame, endFrame ):
+        window = d[ s:e ]
+        pp = np.argmax( window )
+        i0 = max( pp - halfWidth, s )
+        i1 = min( pp + halfWidth, e )
+        peakVal.append( np.max( window ) )
+        peakPos.append( pp + s )
+        dfbf2[j, i0:i1] = 0.0
+    
+    return np.array( peakVal ), peakPos
 
 
 def addColumns( df ):
 
+    y = df["frames"].tolist()
+    csFrame = df["csFrame"]
+    usFrame = df["usFrame"]
+    print( "CSFRAME SHAPE === ", csFrame.shape, usFrame.shape )
+    # Here we convert the ragged array of y to a padded array.
+    length = max(map(len, y))
+    dfbf2 = np.array([yi+[0.0]*(length-len(yi)) for yi in y])
+    print( "LEEN = ", len( dfbf2 ), len( dfbf2[0] ), len( dfbf2[2000] ) )
+    
+    print( "SHAPE = ", dfbf2.shape, len(dfbf2) )
     # I want to build stdev of values below 80 percentile.
     perc = np.percentile( dfbf2, 80, axis = 1 )
     #np.std(np.ma.masked_where( b > np.repeat(pec,5).reshape( 20, 5 ), b ),1)
@@ -52,11 +86,12 @@ def addColumns( df ):
     #print( "SHAPE = ", sd.shape, "  DFBF2 = ", dfbf2.shape )
     df['sdev80'] = sd
     df['mean80'] = mn
-    df['prePk1'], df['prePos1'] = findAndIsolateFramePeak( dfbf2, 0, csFrame -1, PEAKHALFWIDTH )
-    df['prePk2'], df['prePos2'] = findAndIsolateFramePeak( dfbf2, 0, csFrame -1, PEAKHALFWIDTH )
-    df['csPk'], df['csPkPos'] = findAndIsolateFramePeak( dfbf2, csFrame, usFrame, PEAKHALFWIDTH )
-    df['postPk1'], df['postPos1'] = findAndIsolateFramePeak( dfbf2, usFrame, len( dfbf2[0] ),PEAKHALFWIDTH )
-    df['postPk2'], df['postPos2'] = findAndIsolateFramePeak( dfbf2, usFrame, len( dfbf2[0] ), PEAKHALFWIDTH )
+    zeros = [0] * len( csFrame )
+    df['prePk1'], df['prePos1'] = findAndIsolateFramePeak( dfbf2, zeros, csFrame -1, PEAK_HALF_WIDTH )
+    df['prePk2'], df['prePos2'] = findAndIsolateFramePeak( dfbf2, zeros, csFrame -1, PEAK_HALF_WIDTH )
+    df['csPk'], df['csPkPos'] = findAndIsolateFramePeak( dfbf2, csFrame, usFrame, PEAK_HALF_WIDTH )
+    df['postPk1'], df['postPos1'] = findAndIsolateFramePeak( dfbf2, usFrame, [len( dfbf2[0] )] * len( dfbf2 ),PEAK_HALF_WIDTH )
+    df['postPk2'], df['postPos2'] = findAndIsolateFramePeak( dfbf2, usFrame, [len( dfbf2[0] )] * len( dfbf2 ), PEAK_HALF_WIDTH )
     print( df.head() )
 
 

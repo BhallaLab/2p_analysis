@@ -68,24 +68,6 @@ PEAKHALFWIDTH = 3   # Number of frames to be half-width of any Ca peak.
 hitKernel = np.array( [0.25, 0.5, 0.25] )
 BEHAV_KEYS = ["DIRECTION", "FEC", "probeTrials", "camera", "microscope", "LED", "PUFF", "eyeClosure", "MOTION1", "SPEED" ]
 
-def findAndIsolateFramePeak( dfbf2, startFrame, endFrame, halfWidth ):
-    '''
-    # Returns value and position of peak in specified window, and
-    # zeroes out dfbf2 in width around the peak, but within window.
-    # Indexing: dfbf2[ cell*trial, frame]
-    '''
-    window = dfbf2[:,:,startFrame:endFrame]
-    peakVal = np.max( window, 1 )
-    peakPos = np.argmax( window, axis = 1 ) + startFrame
-    # Now zero out the vicinity of the peakPos to do the isolation
-    i0 = max( peakPos - halfWidth, startFrame )
-    i1 = min( peakPos + halfWidth, endFrame )
-    for j in range( i0, i1 ):
-        dfbf2[:,j] = 0
-
-    return peakVal, peakPos + startFrame
-
-
 def main():
     global dataContext
     parser = argparse.ArgumentParser( description = "This is a dispatcher program for sweeping through the a 2P dataset and executing an analysis pipeline" )
