@@ -25,18 +25,22 @@ def main():
     parser.add_argument( "-f", "--filename", type = str, help = "Required: Name of hdf5 file. ", default = "store_2p.h5" )
     parser.add_argument( "-st", "--sdev_thresh",  type = float, help = "Optional: Threshold of number of sdevs that the signal must have in order to count as a hit trial.", default = 2.0 )
     parser.add_argument( "-ht", "--hit_trial_thresh",  type = float, help = "Optional: Threshold of percentage of hit trials that each session must have in order to count as significant PSTH response.", default = 30.0 )
-    parser.add_argument( "--trace_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [96, 99], metavar = ("start_frame", "end frame")  )
-    parser.add_argument( "--baseline_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [80, 90], metavar = ("start_frame", "end frame")  )
+    parser.add_argument( "--trace_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [87, 92], metavar = ("start_frame", "end frame")  )
+    parser.add_argument( "--baseline_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [70, 80], metavar = ("start_frame", "end frame")  )
     parser.add_argument( "-c", "--context", type = str, help = "Optional: Data context. Options are hrishi, soumya and synthetic", default = "soumya" )
     args = parser.parse_args()
 
     t0 = time.time()
     #pd.read_hdf("store_tl.h5", "table", where=["index>2"])
     p2data = pd.read_hdf(args.filename, "2pData")
+    # The pandas_2p.py will put the names in the future, for now set here. 
+    p2data.index.names = ["mouse", "date", "cell", "trial"]
     p2data.sort_index( inplace = True )
     behavData = pd.read_hdf(args.filename, "behavData")
     print( "Time to load = ", time.time() - t0 )
-    frames = addColumns( p2data )
+    csFrame = np.full( len( p2data ), args.trace_frames[0] )
+    usFrame = np.full( len( p2data ), args.trace_frames[1] )
+    frames = addColumns( p2data, csFrame, usFrame )
     print( "Finished adding columns" )
     #sns.pairplot( dataset.loc['G141','20190913'][['prePk1','prePos1','csPk','csPkPos','postPk1','postPos1']], hue='csPk' )
     #displayPeakHisto( p2data, pkName = "csPk", posName = "csPkPos", numSdev = 3.0, hitRatio = 0.3, mouse = "G141", date = "20190913" )
@@ -73,10 +77,10 @@ def findAndIsolateFramePeak( dfbf2, startFrame, endFrame, halfWidth ):
     return np.array( peakVal ), peakPos
 
 
-def addColumns( df ):
+def addColumns( df, csFrame, usFrame ):
     y = df["frames"].tolist()
-    csFrame = df["csFrame"]
-    usFrame = df["usFrame"]
+    #csFrame = df["csFrame"]
+    #usFrame = df["usFrame"]
     print( "CSFRAME SHAPE === ", csFrame.shape, usFrame.shape )
     # Here we convert the ragged array of y to a padded array.
     length = max(map(len, y))
@@ -98,7 +102,7 @@ def addColumns( df ):
     #df['paddedFrames' ] = dfbf2.tolist()
     print( "Computed mean and SD for dataframe")
 
-    zeros = [0] * len( csFrame )
+    zeros = [0] * len( df )
     df['prePk1'], df['prePos1'] = findAndIsolateFramePeak( dfbf2, zeros, csFrame -1, PEAK_HALF_WIDTH )
     df['prePk2'], df['prePos2'] = findAndIsolateFramePeak( dfbf2, zeros, csFrame -1, PEAK_HALF_WIDTH )
     df['csPk'], df['csPkPos'] = findAndIsolateFramePeak( dfbf2, csFrame, usFrame, PEAK_HALF_WIDTH )
@@ -106,6 +110,7 @@ def addColumns( df ):
     df['postPk2'], df['postPos2'] = findAndIsolateFramePeak( dfbf2, usFrame, [len( dfbf2[0] )] * len( dfbf2 ), PEAK_HALF_WIDTH )
     print( df.head() )
     return pd.DataFrame( dfbf2.tolist(), index = df.index )
+
 
 def displayPeakHisto( df, pkName = "csPk", posName = "csPkPos", numSdev = 3.0, hitRatio = 0.2, mouse = "G141", date = "20190913" ):
     # Generate histo of positions for a given cell on a given session.
@@ -154,6 +159,7 @@ def displayPSTH( df, frames, sortStartFrame = 40, sortEndFrame = -1, usFrame = -
         if mn.max() / mn.std() > BLANK_USFRAME_THRESH:
             usFrame = mn.idxmax()
             ratio.loc[:,usFrame] = 0    # blank out the biggest response.
+        print( "{}/{} Max = {:.4f} at {}".format( mouse, date, mn.max(), mn.idxmax() ) )
     else:
         ratio.loc[:,usFrame] = 0    # blank out the defined US response.
 
@@ -163,10 +169,33 @@ def displayPSTH( df, frames, sortStartFrame = 40, sortEndFrame = -1, usFrame = -
     fig = plt.figure( figsize = (12,4 ))
     plt.imshow( np.log10( sortedRatio ) )
     plt.show()
+    '''
+    '''
 
     return psth, sdev
 
-def responderStats( df, frames ):
+
+hasBar = False
+def innerPlotHisto( mouse, histo ):
+    global hasBar
+    df = histo.loc[mouse]
+    numFrames = df.index.levshape[1]
+    data = np.array( df )
+    data.shape = ( len( data ) // numFrames, numFrames )
+
+    fig = plt.figure( num = mouse, figsize = ( 2, 10 ) )
+    img = plt.imshow( data )
+    plt.title( mouse )
+    plt.ylabel( "Session day" )
+    plt.xlabel( "Frame" )
+    if not hasBar:
+        fig.colorbar( img )
+    plt.show()
+    plt.pause( 0.1 )
+    hasBar = True
+
+
+def responderStats( df, frames, sigThresh ):
     '''
     Report 
         - fraction of cells responding (in a given window?),
@@ -177,10 +206,43 @@ def responderStats( df, frames ):
             - Mean when it is a hit trial.
         - Tau of response
     '''
+    # This gives indices of pks above thresh for each trial.
+    bigPkIdx = df["csPkPos"][ (df["csPk"]/df["sdev80"]) > sigThresh ]
+    # the above works fine till the threshold is so high some bins are zero.
+
+    # I can do histograms with count, division = np.histogram( bigPkIdx, bins = [0, 1, 2] )
+    # If the integer values are good for binning, I can use value_counts:
+    # histo = bigPkIdx.groupby(level=["mouse", "date"] ).value_counts(sort=False, normalize = True)
+    # 1. cumulate over each session for all cells. Draw a heatmap
+    # of how this evolves over dates for each mouse.
+    # Or, sum up the pks over time. Do they change?
+    # Obtain a ratio wrt total # of cells. 
+    histo = bigPkIdx.groupby(level=["mouse", "date"] ).value_counts(sort=False, normalize = True)
+
+    plt.ion()
+    for mouse in df.index.levels[0]:
+        innerPlotHisto( mouse, histo )
+
+    '''
+    plt.figure( figsize = ( 4, 12 ) )
+    #plt.imshow( histo.loc["G377"] ) # Doesn't work.
+    n377 = np.array(histo.loc["G377"])
+    numFrames = h377.index.levshape[1]
+    n377.shape = ( len( n377 ) // numFrames, numFrames )
+    plt.imshow( n377 )
+    
+    plt.show()
+    plt.pause( 0.1 )
+    '''
+
+    # 2. Figure out how to count hit trials from this.
+
+    # Trying to fix naming of the multiindex columns. It would help.
     return 0
 
 def timeCellStats( df, frames ):
     '''
+    # of cells with pk in window as a func of date for each animal.
     '''
     return 0
 

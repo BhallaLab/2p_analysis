@@ -182,6 +182,7 @@ def main():
         print( "\nAnalyze Mouse: ", mouseName )
     print( "KEYS ==========",  mouseNameList, "    NUM-frames = ", len( sessionFrames ), "  ", len( mouseNameList ) )
     fullSet = pd.concat( sessionFrames, keys = mouseNameList )
+    fullSet.index.names = ["mouse", "date", "cell", "trial"]
     behavSet = pd.concat( behavSessionFrames, keys = mouseNameList )
 
     print( "\nNUM MICE = ", len(dataContext.imagingMice), "NUM_SESSIONS = ", numSessions, "NUM_BEHAVIOUR", numBehaviour )
