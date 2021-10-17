@@ -33,8 +33,8 @@ def main():
     t0 = time.time()
     #pd.read_hdf("store_tl.h5", "table", where=["index>2"])
     p2data = pd.read_hdf(args.filename, "2pData")
-    # The pandas_2p.py will put the names in the future, for now set here. 
-    p2data.index.names = ["mouse", "date", "cell", "trial"]
+    # The pandas_2p.py has put the names for the multi-index in p2data:
+    #p2data.index.names = ["mouse", "date", "cell", "trial"]
     p2data.sort_index( inplace = True )
     behavData = pd.read_hdf(args.filename, "behavData")
     print( "Time to load = ", time.time() - t0 )
@@ -70,7 +70,7 @@ def findAndIsolateFramePeak( dfbf2, startFrame, endFrame, halfWidth ):
         i0 = max( pp - halfWidth, s )
         i1 = min( pp + halfWidth, e )
         peakVal.append( np.max( window ) )
-        peakPos.append( pp + s )
+        peakPos.append( pp )
         dfbf2[j, i0:i1] = 0.0
     
     print( "Found Frame Peak between {} and {}".format( startFrame[0], endFrame[0] ) )
@@ -176,14 +176,14 @@ def displayPSTH( df, frames, sortStartFrame = 40, sortEndFrame = -1, usFrame = -
 
 
 hasBar = False
-def innerPlotHisto( mouse, histo ):
+def innerPlotHisto( mouse, data, width = 2 ):
     global hasBar
-    df = histo.loc[mouse]
-    numFrames = df.index.levshape[1]
-    data = np.array( df )
-    data.shape = ( len( data ) // numFrames, numFrames )
+    #df = histo.loc[mouse]
+    #numFrames = df.index.levshape[1]
+    #data = np.array( df )
+    #data.shape = ( len( data ) // numFrames, numFrames )
 
-    fig = plt.figure( num = mouse, figsize = ( 2, 10 ) )
+    fig = plt.figure( num = mouse, figsize = ( width, 20 ) )
     img = plt.imshow( data )
     plt.title( mouse )
     plt.ylabel( "Session day" )
@@ -195,7 +195,7 @@ def innerPlotHisto( mouse, histo ):
     hasBar = True
 
 
-def responderStats( df, frames, sigThresh ):
+def responderStats( df, frames, sigThresh, pk = "csPk", pos = "csPkPos" ):
     '''
     Report 
         - fraction of cells responding (in a given window?),
@@ -207,7 +207,25 @@ def responderStats( df, frames, sigThresh ):
         - Tau of response
     '''
     # This gives indices of pks above thresh for each trial.
-    bigPkIdx = df["csPkPos"][ (df["csPk"]/df["sdev80"]) > sigThresh ]
+    pkRange = df[pos].max() + 1
+    # Shape it by dat[ dates, bins ]
+
+    bigPkIdx = df[pos][ (df[pk]/df["sdev80"]) > sigThresh ]
+    #I'm sure there is a clean way to get the num of dates for each mouse.
+    plt.ion()
+    # Need to normalize by number of cells.
+    for mouse in df.index.levels[0]:
+        mdf = df.loc[mouse]
+        #numDates = df.loc[mouse, :, 0, 0].shape[0] 
+        numDates = mdf.loc[ :, 0, 0].shape[0] 
+        dates = mdf.loc[:,0,0].index
+        histo = np.zeros( (len( dates ), pkRange ) )
+        for i, date in enumerate( dates ):
+            bp = bigPkIdx.loc[mouse, date]
+            for b in bp:
+                histo[i, b] += 1
+        innerPlotHisto( mouse, histo, np.sqrt( pkRange ) )
+
     # the above works fine till the threshold is so high some bins are zero.
 
     # I can do histograms with count, division = np.histogram( bigPkIdx, bins = [0, 1, 2] )
@@ -217,11 +235,33 @@ def responderStats( df, frames, sigThresh ):
     # of how this evolves over dates for each mouse.
     # Or, sum up the pks over time. Do they change?
     # Obtain a ratio wrt total # of cells. 
-    histo = bigPkIdx.groupby(level=["mouse", "date"] ).value_counts(sort=False, normalize = True)
+    #histo = bigPkIdx.groupby(level=["mouse", "date"] ).value_counts(sort=False, normalize = True)
+    # Here we try again:
+    # histo = bigPkIdx.groupby(level=["mouse", "date"] ).value_counts(sort=False, normalize = True)
+    # dat = np.array( histo.loc["G141"] 
+
+    # dat = np.zeros( bigPkIdx.loc[ mouse ]
+
+
+
+
+
+    '''
+    # Value counts leaves out bins, so I should do np.histogram
+    numFrames = max( bigPkIdx ) - min( bigPkIdx )
+    histo = np.histogram( bigPkIdx.groupby(level=["mouse", "date"] ), bins = numFrames )
+    # Value counts leaves out bins, so I should do np.histogram
+    bar = df[pos][ (df[pk]/df["sdev80"]) > sigThresh ].groupby( level = ["mouse", "date"] )
+
+    if pk == "csPk":
+        width = 2
+    else:
+        width = 5
 
     plt.ion()
     for mouse in df.index.levels[0]:
-        innerPlotHisto( mouse, histo )
+        innerPlotHisto( mouse, histo, width )
+    '''
 
     '''
     plt.figure( figsize = ( 4, 12 ) )
