@@ -176,26 +176,25 @@ def displayPSTH( df, frames, sortStartFrame = 40, sortEndFrame = -1, usFrame = -
 
 
 hasBar = False
-def innerPlotHisto( mouse, data, width = 2 ):
+def innerPlotHisto( figname, mouse, data, fignum ):
     global hasBar
     #df = histo.loc[mouse]
     #numFrames = df.index.levshape[1]
     #data = np.array( df )
     #data.shape = ( len( data ) // numFrames, numFrames )
 
-    fig = plt.figure( num = mouse, figsize = ( width, 20 ) )
-    img = plt.imshow( data )
-    plt.title( mouse )
-    plt.ylabel( "Session day" )
-    plt.xlabel( "Frame" )
-    if not hasBar:
-        fig.colorbar( img )
-    plt.show()
-    plt.pause( 0.1 )
+    fig = plt.figure( figname )
+    ax = plt.subplot( 5, 1, fignum )
+    img = ax.imshow( data )
+    ax.set_title( mouse )
+    ax.set_ylabel( "Session/day" )
+    ax.set_xlabel( "Frame" )
     hasBar = True
+    return img
 
 
-def responderStats( df, frames, sigThresh, pk = "csPk", pos = "csPkPos" ):
+def responderStats( df, frames, sigThresh = 5.0, hitSigThresh = 2.5, hitThresh = 0.15, pk = "csPk", pos = "csPkPos" ):
+    hitKernel = np.array( [0.67, 1.0, 0.67] )
     '''
     Report 
         - fraction of cells responding (in a given window?),
@@ -209,24 +208,57 @@ def responderStats( df, frames, sigThresh, pk = "csPk", pos = "csPkPos" ):
     # This gives indices of pks above thresh for each trial.
     pkRange = df[pos].max() + 1
     # Shape it by dat[ dates, bins ]
+    bins = range( pkRange +1 )
+    fig1 = plt.figure( "psthStats", figsize = (6, 9 ) )
+    fig2 = plt.figure( "hitStats", figsize = (6, 9 ) )
+    fig3 = plt.figure( "hitPlots", figsize = (6, 9 ) )
+    ax1 = plt.subplot( 2, 1, 1 )
+    ax2 = plt.subplot( 2, 1, 2 )
+
+    ax1.set_title( "Time cell evolution over sessions" )
+    ax1.set_xlabel( "Session #" )
+    ax1.set_ylabel( "# of time cells" )
+    ax2.set_title( "Time cell evolution over frames" )
+    ax2.set_xlabel( "Frame #" )
+    ax2.set_ylabel( "# of time cells" )
 
     bigPkIdx = df[pos][ (df[pk]/df["sdev80"]) > sigThresh ]
+    hitPkIdx = df[pos][ (df[pk]/df["sdev80"]) > hitSigThresh ]
     #I'm sure there is a clean way to get the num of dates for each mouse.
-    plt.ion()
     # Need to normalize by number of cells.
-    for mouse in df.index.levels[0]:
+    for mousenum, mouse in enumerate( df.index.levels[0] ):
         mdf = df.loc[mouse]
-        #numDates = df.loc[mouse, :, 0, 0].shape[0] 
-        numDates = mdf.loc[ :, 0, 0].shape[0] 
-        dates = mdf.loc[:,0,0].index
+        numTrials = mdf.index.levshape[-1]
+        dates = mdf.index.unique( level = "date" )
         histo = np.zeros( (len( dates ), pkRange ) )
+        hitHisto = np.zeros( (len( dates ), pkRange ) )
         for i, date in enumerate( dates ):
             bp = bigPkIdx.loc[mouse, date]
-            for b in bp:
-                histo[i, b] += 1
-        innerPlotHisto( mouse, histo, np.sqrt( pkRange ) )
+            hp = hitPkIdx.loc[mouse, date]
+            numCells = mdf.loc[date, :, 0].shape[0]
+            assert( numCells > 0 )
+            increment = 1.0 / numCells
+            for b in bp:    # iterating over all cells * all trails. 'b' is the frame index of pk
+                histo[i, b] += increment
+            for cell in hp.index.unique( level = "cell" ):
+                hits = np.histogram( hp.loc[cell], bins )
+                # Now apply a convolution across the hits to smooth it out.
+                smoothHits = np.convolve( hits[0], hitKernel, mode = "same" )
+                hitHisto[i] += (smoothHits > hitThresh*numTrials )
+            # innerHitHisto[ cell#, frame# ]
+            # Here we can threshold innerHitHisto to find a time cell, and its frame.
+            # Would like a raster of verified time cells for each session.
 
-    # the above works fine till the threshold is so high some bins are zero.
+        innerPlotHisto( "psthStats", mouse, histo, mousenum + 1 )
+        innerPlotHisto( "hitStats", mouse, hitHisto, mousenum + 1 )
+        ax1.plot( range( hitHisto.shape[0] ), np.sum( hitHisto, axis = 1 ), label = mouse )
+        ax2.plot( range( hitHisto.shape[1] ), np.sum( hitHisto, axis = 0 ), label = mouse )
+    #fig1.colorbar( img )
+    ax1.legend()
+    ax2.legend()
+    plt.show()
+
+
 
     # I can do histograms with count, division = np.histogram( bigPkIdx, bins = [0, 1, 2] )
     # If the integer values are good for binning, I can use value_counts:
@@ -277,7 +309,6 @@ def responderStats( df, frames, sigThresh, pk = "csPk", pos = "csPkPos" ):
 
     # 2. Figure out how to count hit trials from this.
 
-    # Trying to fix naming of the multiindex columns. It would help.
     return 0
 
 def timeCellStats( df, frames ):
