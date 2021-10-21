@@ -32,7 +32,7 @@ def main():
 
     t0 = time.time()
     #pd.read_hdf("store_tl.h5", "table", where=["index>2"])
-    p2data = pd.read_hdf(args.filename, "2pData")
+    p2data = pd.read_hdf(args.filename, "CaData")
     # The pandas_2p.py has put the names for the multi-index in p2data:
     #p2data.index.names = ["mouse", "date", "cell", "trial"]
     p2data.sort_index( inplace = True )

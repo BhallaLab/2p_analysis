@@ -51,35 +51,37 @@ class Context:
         self.dfbfFieldName = dfbfFieldName
         self.checkFname = checkFname
 
-soumyaContext = Context( "soumya", 
-    imagingMice = ['G141', 'G142', 'G313', 'G377', 'G71'],
-    behaviourMice = ['G141', 'G142', 'G313', 'G377', 'G71'],
-    dataDirectory = "/home1/bhalla/soumyab/CalciumDataAnalysisResults/Preprocessed_files/",
-    fileNamePrefix = "wholeTrial_B",
-    padding = "/",
-    outfile = "soumya_2p.h5",
-    checkFname = checkSoumyaDataFileName )
+def fillContext():
+    ret = {}
+    ret["soumya"] = Context( "soumya", 
+        imagingMice = ['G141', 'G142', 'G313', 'G377', 'G71'],
+        behaviourMice = ['G141', 'G142', 'G313', 'G377', 'G71'],
+        dataDirectory = "/home1/bhalla/soumyab/CalciumDataAnalysisResults/Preprocessed_files/",
+        fileNamePrefix = "wholeTrial_B",
+        padding = "/",
+        outfile = "soumya_2p.h5",
+        checkFname = checkSoumyaDataFileName )
 
-hrishiContext = Context( "hrishi", 
-    imagingMice = ['G405',],
-    behaviourMice=['G405',],
-    dataDirectory = "/home1/bhalla/hrishikeshn/suite2p_output/",
-    fileNamePrefix = "2D",
-    padding = "/1/suite2p/plane0/",
-    outfile = "hrishi_2p.h5",
-    dfbfFieldName = "F",
-    checkFname = checkHrishiDataFileName )
+    ret["hrishi"] = Context( "hrishi", 
+        imagingMice = ['G405',],
+        behaviourMice=['G405',],
+        dataDirectory = "/home1/bhalla/hrishikeshn/suite2p_output/",
+        fileNamePrefix = "2D",
+        padding = "/1/suite2p/plane0/",
+        outfile = "hrishi_2p.h5",
+        dfbfFieldName = "F",
+        checkFname = checkHrishiDataFileName )
 
-hrishiContext2 = Context( "hrishi2", 
-    imagingMice = ['G394', 'G396', 'G404', 'G405', 'G407', 'G408', 'G409'],
-    behaviourMice=['G394', 'G396', 'G404', 'G405', 'G407', 'G408', 'G409'],
-    dataDirectory = "/home1/bhalla/hrishikeshn/Imaging_Sorted_for_Analysis/Suite2p_analysis/",
-    fileNamePrefix = "2D",
-    padding = "/",
-    outfile = "hrishi_2p.h5",
-    checkFname = checkHrishiDataFileName2 )
+    ret["hrishi_old"] = Context( "hrishi2", 
+        imagingMice = ['G394', 'G396', 'G404', 'G405', 'G407', 'G408', 'G409'],
+        behaviourMice=['G394', 'G396', 'G404', 'G405', 'G407', 'G408', 'G409'],
+        dataDirectory = "/home1/bhalla/hrishikeshn/Imaging_Sorted_for_Analysis/Suite2p_analysis/",
+        fileNamePrefix = "2D",
+        padding = "/",
+        outfile = "hrishi_2p.h5",
+        checkFname = checkHrishiDataFileName2 )
+    return ret
 
-dataContext = soumyaContext
 
 imagingSessionNames = ['1', '2', '3']
 NUM_FRAMES = 240
@@ -88,20 +90,20 @@ hitKernel = np.array( [0.25, 0.5, 0.25] )
 BEHAV_KEYS = ["DIRECTION", "FEC", "probeTrials", "camera", "microscope", "LED", "PUFF", "eyeClosure", "MOTION1", "SPEED" ]
 
 def main():
-    global dataContext
+    contextDict = fillContext()
     parser = argparse.ArgumentParser( description = "This is a dispatcher program for sweeping through the a 2P dataset and executing an analysis pipeline" )
-    parser.add_argument( "-b", "--basepath", type = str, help = "Optional: Base path for data. It is organized as follows:\n basePath/Imaging/mouse_name/date/trial and\n basePath/Behaviour/mouse_name/date/trial ", default = soumyaContext.dataDirectory )
+    parser.add_argument( "-b", "--basepath", type = str, help = "Optional: Base path for data. It is organized as follows:\n basePath/Imaging/mouse_name/date/trial and\n basePath/Behaviour/mouse_name/date/trial ", default = contextDict["soumya"].dataDirectory )
     parser.add_argument( "-st", "--sdev_thresh",  type = float, help = "Optional: Threshold of number of sdevs that the signal must have in order to count as a hit trial.", default = 2.0 )
     parser.add_argument( "-ht", "--hit_trial_thresh",  type = float, help = "Optional: Threshold of percentage of hit trials that each session must have in order to count as significant PSTH response.", default = 30.0 )
     parser.add_argument( "--trace_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [96, 99], metavar = ("start_frame", "end frame")  )
     parser.add_argument( "--baseline_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [80, 90], metavar = ("start_frame", "end frame")  )
-    parser.add_argument( "-c", "--context", type = str, help = "Optional: Data context. Options are hrishi, soumya and synthetic", default = "soumya" )
+    parser.add_argument( "-c", "--context", type = str, help = "Optional: Data context. Options are hrishi, soumya, hrishi_old and synthetic", default = "soumya" )
     args = parser.parse_args()
 
-    if args.context == "soumya":
-        dataContext = soumyaContext
-    elif args.context == "hrishi":
-        dataContext = hrishiContext
+    dataContext = contextDict.get( args.context )
+    if not dataContext:
+        print( "Error: Data context '{}' not found.".format( args.context ))
+        quit()
 
     trends = []
     psth_params = [args.sdev_thresh, args.hit_trial_thresh] + args.trace_frames + args.baseline_frames
@@ -133,7 +135,6 @@ def main():
                     dat = loadmat( dataContext.dataDirectory + mouseName + "/" + date + dataContext.padding + matfile )
                     if not 'dfbf' in dat:
                         print( "BAAAAAD: no dfbf found: ",  mouseName + "/" + date + "/" + matfile )
-                        print( dat.keys() )
                         continue
                     # current version of numpy doesn't handle posinf
                     #dfbf = np.nan_to_num( dat['dfbf'], posinf = 0.0, neginf = 0.0 )
@@ -210,7 +211,7 @@ def main():
     #print( "Pk Pos = ", totalPkPos )
     #print( "PSTH = ", totalPSTH )
     t0 = time.time()
-    fullSet.to_hdf(dataContext.outfile, "2pData", format = "fixed", append=False, mode = "w" )
+    fullSet.to_hdf(dataContext.outfile, "CaData", format = "fixed", append=False, mode = "w" )
     behavSet.to_hdf(dataContext.outfile, "behavData", format = "fixed", append=False, mode = "a" )
     print( "Time to save = ", time.time() - t0 )
     #fullSet.to_csv("store_2p.csv", float_format = "%4f" )
