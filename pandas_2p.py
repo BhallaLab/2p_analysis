@@ -63,8 +63,8 @@ def fillContext():
         checkFname = checkSoumyaDataFileName )
 
     ret["hrishi"] = Context( "hrishi", 
-        imagingMice = ['G405',],
-        behaviourMice=['G405',],
+        imagingMice = ['G405', 'G394'],
+        behaviourMice=['G405', 'G394'],
         dataDirectory = "/home1/bhalla/hrishikeshn/suite2p_output/",
         fileNamePrefix = "2D",
         padding = "/1/suite2p/plane0/",
@@ -81,6 +81,38 @@ def fillContext():
         outfile = "hrishi_2p.h5",
         checkFname = checkHrishiDataFileName2 )
     return ret
+
+def calcDfbf( F, numFrames ):
+    # F comes in as F[ cell, trial* frame]. Reshape to [cell, trial, frame]
+    numCells = F.shape[0]
+    numTrials = F.shape[1] // numFrames
+    if numTrials * numFrames != F.shape[1]:
+        # Try 233 frames:
+        numFrames += 1
+        numTrials = F.shape[1] // numFrames
+        if numTrials * numFrames != F.shape[1]:
+            print( "Error: wrong number of frames {} * {} != {}".format( numTrails, numFrames, F.shape[1] ) )
+            quit()
+    F.shape = ( numCells, numTrials, -1 )
+
+    # Use the 10th percentile activity as baseline
+    baselines = np.percentile( F, 10.0, axis = 2 )
+    # Check for zeros in the baseline. Replace with something big.
+    baselines[abs( baselines ) < 1e-9] = 1e9
+
+    # We have to transpose to do the operations trial-wise
+    tb = baselines.transpose()
+
+    # Calculate dfbf and transpose back. 
+    dfbf = np.transpose( (F.transpose() - tb)/tb )
+    if np.isnan( dfbf ).any() or np.isinf( dfbf ).any():
+        print( "OOOOPs, NANS" )
+        print( "zeroes in the baseline: ", (tb == 0).any() )
+        quit()
+    print( "DFBF shape = ", dfbf.shape )
+    return dfbf
+
+
 
 
 imagingSessionNames = ['1', '2', '3']
@@ -133,12 +165,22 @@ def main():
             for matfile in os.listdir( dataContext.dataDirectory + mouseName + "/" + date + dataContext.padding ):
                 if dataContext.checkFname( mouseName, date, matfile ):
                     dat = loadmat( dataContext.dataDirectory + mouseName + "/" + date + dataContext.padding + matfile )
-                    if not 'dfbf' in dat:
+                    '''
+                    print( "KEYS = ", dat.keys() )
+                    print( "STAT = ", dat["spks"].shape )
+                    print( "OPS = ", dat["ops"].shape )
+                    print( "SISCELL = ", dat["iscell"].shape )
+                    print( dat["redcell"].shape )
+                    '''
+                    if 'dfbf' in dat:
+                        dfbf = dat['dfbf']
+                    elif 'F' in dat:
+                        dfbf = calcDfbf( dat['F'], 232 )
+                    else:
                         print( "BAAAAAD: no dfbf found: ",  mouseName + "/" + date + "/" + matfile )
                         continue
                     # current version of numpy doesn't handle posinf
                     #dfbf = np.nan_to_num( dat['dfbf'], posinf = 0.0, neginf = 0.0 )
-                    dfbf = dat['dfbf']
                     # dfbf[cell, trial, frame]
                     # Reshape into columns of frame and rows of (cell,trial)
                     sh = dfbf.shape
@@ -204,7 +246,8 @@ def main():
     print( "KEYS ==========",  mouseNameList, "    NUM-frames = ", len( sessionFrames ), "  ", len( mouseNameList ) )
     fullSet = pd.concat( sessionFrames, keys = mouseNameList )
     fullSet.index.names = ["mouse", "date", "cell", "trial"]
-    behavSet = pd.concat( behavSessionFrames, keys = mouseNameList )
+    if len( behavSessionFrames ) > 0:
+        behavSet = pd.concat( behavSessionFrames, keys = mouseNameList )
 
     print( "\nNUM MICE = ", len(dataContext.imagingMice), "NUM_SESSIONS = ", numSessions, "NUM_BEHAVIOUR", numBehaviour )
     print( "NUM SIG = ", numSig, " num Cells = ", numCells )
@@ -212,7 +255,8 @@ def main():
     #print( "PSTH = ", totalPSTH )
     t0 = time.time()
     fullSet.to_hdf(dataContext.outfile, "CaData", format = "fixed", append=False, mode = "w" )
-    behavSet.to_hdf(dataContext.outfile, "behavData", format = "fixed", append=False, mode = "a" )
+    if len( behavSessionFrames ) > 0:
+        behavSet.to_hdf(dataContext.outfile, "behavData", format = "fixed", append=False, mode = "a" )
     print( "Time to save = ", time.time() - t0 )
     #fullSet.to_csv("store_2p.csv", float_format = "%4f" )
 
