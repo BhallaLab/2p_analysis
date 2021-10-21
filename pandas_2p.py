@@ -255,8 +255,9 @@ def main():
     #print( "PSTH = ", totalPSTH )
     t0 = time.time()
     fullSet.to_hdf(dataContext.outfile, "CaData", format = "fixed", append=False, mode = "w" )
-    if len( behavSessionFrames ) > 0:
-        behavSet.to_hdf(dataContext.outfile, "behavData", format = "fixed", append=False, mode = "a" )
+    if len( behavSessionFrames ) == 0:
+        behavSet = pd.DataFrame( { key:[0,] for key in BEHAV_KEYS} )
+    behavSet.to_hdf(dataContext.outfile, "behavData", format = "fixed", append=False, mode = "a" )
     print( "Time to save = ", time.time() - t0 )
     #fullSet.to_csv("store_2p.csv", float_format = "%4f" )
 
