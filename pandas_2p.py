@@ -34,15 +34,21 @@ def checkSoumyaDataFileName( mouse, date, fname ):
     return (mouse + "_" + date in fname) and ("_wholeTrial_B" in fname) and fname[-4:] == ".mat" # for Soumya
 
 def checkHrishiDataFileName( mouse, date, fname ):
+    return fname == "Fall.mat" # for Hrishi
+
+def checkHrishiDataFileName2( mouse, date, fname ):
     return fname == mouse + "_" + date + ".mat" # for Hrishi
 
 class Context:
-    def __init__( self, name, imagingMice = [], behaviourMice = [], dataDirectory = "", fileNamePrefix = "", checkFname = checkSoumyaDataFileName ):
+    def __init__( self, name, imagingMice = [], behaviourMice = [], dataDirectory = "", fileNamePrefix = "", padding = "/", outfile = "store_2p.h5", dfbfFieldName = "dfbf", checkFname = checkSoumyaDataFileName ):
         self.name = name
         self.imagingMice = imagingMice
         self.behavourMice = behaviourMice
         self.dataDirectory = dataDirectory
         self.fileNamePrefix = fileNamePrefix
+        self.padding = padding
+        self.outfile = outfile
+        self.dfbfFieldName = dfbfFieldName
         self.checkFname = checkFname
 
 soumyaContext = Context( "soumya", 
@@ -50,15 +56,28 @@ soumyaContext = Context( "soumya",
     behaviourMice = ['G141', 'G142', 'G313', 'G377', 'G71'],
     dataDirectory = "/home1/bhalla/soumyab/CalciumDataAnalysisResults/Preprocessed_files/",
     fileNamePrefix = "wholeTrial_B",
+    padding = "/",
+    outfile = "soumya_2p.h5",
     checkFname = checkSoumyaDataFileName )
 
-
 hrishiContext = Context( "hrishi", 
+    imagingMice = ['G405',],
+    behaviourMice=['G405',],
+    dataDirectory = "/home1/bhalla/hrishikeshn/suite2p_output/",
+    fileNamePrefix = "2D",
+    padding = "/1/suite2p/plane0/",
+    outfile = "hrishi_2p.h5",
+    dfbfFieldName = "F",
+    checkFname = checkHrishiDataFileName )
+
+hrishiContext2 = Context( "hrishi2", 
     imagingMice = ['G394', 'G396', 'G404', 'G405', 'G407', 'G408', 'G409'],
     behaviourMice=['G394', 'G396', 'G404', 'G405', 'G407', 'G408', 'G409'],
     dataDirectory = "/home1/bhalla/hrishikeshn/Imaging_Sorted_for_Analysis/Suite2p_analysis/",
     fileNamePrefix = "2D",
-    checkFname = checkHrishiDataFileName )
+    padding = "/",
+    outfile = "hrishi_2p.h5",
+    checkFname = checkHrishiDataFileName2 )
 
 dataContext = soumyaContext
 
@@ -109,11 +128,12 @@ def main():
             if len(date) != 8:
                 continue
             countSession = 0
-            for matfile in os.listdir( dataContext.dataDirectory + mouseName + "/" + date + "/" ):
+            for matfile in os.listdir( dataContext.dataDirectory + mouseName + "/" + date + dataContext.padding ):
                 if dataContext.checkFname( mouseName, date, matfile ):
-                    dat = loadmat( dataContext.dataDirectory + mouseName + "/" + date + "/" + matfile )
+                    dat = loadmat( dataContext.dataDirectory + mouseName + "/" + date + dataContext.padding + matfile )
                     if not 'dfbf' in dat:
-                        print( "BAAAAAD: ",  mouseName + "/" + date + "/" + matfile )
+                        print( "BAAAAAD: no dfbf found: ",  mouseName + "/" + date + "/" + matfile )
+                        print( dat.keys() )
                         continue
                     # current version of numpy doesn't handle posinf
                     #dfbf = np.nan_to_num( dat['dfbf'], posinf = 0.0, neginf = 0.0 )
@@ -190,8 +210,8 @@ def main():
     #print( "Pk Pos = ", totalPkPos )
     #print( "PSTH = ", totalPSTH )
     t0 = time.time()
-    fullSet.to_hdf("store_2p.h5", "2pData", format = "fixed", append=False, mode = "w" )
-    behavSet.to_hdf("store_2p.h5", "behavData", format = "fixed", append=False, mode = "a" )
+    fullSet.to_hdf(dataContext.outfile, "2pData", format = "fixed", append=False, mode = "w" )
+    behavSet.to_hdf(dataContext.outfile, "behavData", format = "fixed", append=False, mode = "a" )
     print( "Time to save = ", time.time() - t0 )
     #fullSet.to_csv("store_2p.csv", float_format = "%4f" )
 
