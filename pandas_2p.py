@@ -63,8 +63,8 @@ def fillContext():
         checkFname = checkSoumyaDataFileName )
 
     ret["hrishi"] = Context( "hrishi", 
-        imagingMice = ['G405', 'G394'],
-        behaviourMice=['G405', 'G394'],
+        imagingMice = ['G405', 'G394', 'G404'],
+        behaviourMice=['G405', 'G394', 'G404'],
         dataDirectory = "/home1/bhalla/hrishikeshn/suite2p_output/",
         fileNamePrefix = "2D",
         padding = "/1/suite2p/plane0/",

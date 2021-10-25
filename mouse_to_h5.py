@@ -65,8 +65,8 @@ def fillContext():
         checkFname = checkSoumyaDataFileName )
 
     ret["hrishi"] = Context( "hrishi", 
-        imagingMice = ['G405', 'G394'],
-        behaviourMice=['G405', 'G394'],
+        imagingMice = ['G404', 'G405', 'G394'],
+        behaviourMice=['G404', 'G405', 'G394'],
         dataDirectory = "/home1/bhalla/hrishikeshn/suite2p_output/",
         fileNamePrefix = "2D",
         padding = "/1/suite2p/plane0/",
@@ -107,7 +107,7 @@ def calcDfbf( F, numFrames ):
     baselines[abs( baselines ) < 1e-9] = 1e9
 
     # Calculate dfbf and transpose back. 
-    dfbf = np.transpose( (F.transpose() - tb)/(baselines.transpose() )
+    dfbf = np.transpose( (F.transpose() - tb)/(baselines.transpose() ) )
     if np.isnan( dfbf ).any() or np.isinf( dfbf ).any():
         print( "OOOOPs, NANS" )
         print( "zeroes in the baseline: ", (tb == 0).any() )
@@ -168,6 +168,8 @@ def main():
             if len(date) != 8:
                 continue
             countSession = 0
+            if not os.path.isdir( dataContext.dataDirectory + mouseName + "/" + date + dataContext.padding ):
+                continue
             for matfile in os.listdir( dataContext.dataDirectory + mouseName + "/" + date + dataContext.padding ):
                 if dataContext.checkFname( mouseName, date, matfile ):
                     dat = loadmat( dataContext.dataDirectory + mouseName + "/" + date + dataContext.padding + matfile )
@@ -240,7 +242,7 @@ def main():
         mouseFrame = pd.concat( frames, keys = dates )
         mouseFrame.index.names = ["date", "cell", "trial"]
         t0 = -time.time()
-        mouseFrame.to_hdf(dataContext.outfile, mouseName, format = "fixed", append=False, mode = "a" )
+        mouseFrame.to_hdf( dataContext.outfile, mouseName, format = "fixed", append=False, mode = "a" )
         t0 += time.time()
 
         #sessionFrames.append( pd.concat( frames, keys = dates ) )
@@ -253,7 +255,7 @@ def main():
     if len( behavSessionFrames ) > 0:
         behavSet = pd.concat( behavSessionFrames, keys = mouseNameList )
 
-    print( "\nNUM MICE = ", len(dataContext.imagingMice), "NUM_SESSIONS = ", numSessions, "NUM_BEHAVIOUR", numBehaviour, ", numCelsl = ", numCells )
+    print( "\nNUM MICE = ", len(dataContext.imagingMice), "NUM_SESSIONS = ", numSessions, "NUM_BEHAVIOUR", numBehaviour, ", numCells = ", numCells )
     t0 -= time.time()
     #fullSet.to_hdf(dataContext.outfile, "CaData", format = "fixed", append=False, mode = "w" )
     if len( behavSessionFrames ) == 0:
