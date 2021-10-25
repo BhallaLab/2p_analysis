@@ -162,6 +162,8 @@ def main():
             if len(date) != 8:
                 continue
             countSession = 0
+            if not os.path.isdir(dataContext.dataDirectory + mouseName + "/" + date + dataContext.padding ):
+                continue
             for matfile in os.listdir( dataContext.dataDirectory + mouseName + "/" + date + dataContext.padding ):
                 if dataContext.checkFname( mouseName, date, matfile ):
                     dat = loadmat( dataContext.dataDirectory + mouseName + "/" + date + dataContext.padding + matfile )
