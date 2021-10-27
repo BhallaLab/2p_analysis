@@ -65,8 +65,8 @@ def fillContext():
         checkFname = checkSoumyaDataFileName )
 
     ret["hrishi"] = Context( "hrishi", 
-        imagingMice = ['G404', 'G405', 'G394', 'G409'],
-        behaviourMice=['G404', 'G405', 'G394', 'G409'],
+        imagingMice = ['G407', 'G405', 'G394', 'G404'],
+        behaviourMice=['G407', 'G405', 'G394', 'G404'],
         dataDirectory = "/home1/bhalla/hrishikeshn/suite2p_output/",
         fileNamePrefix = "2D",
         padding = "/1/suite2p/plane0/",
@@ -95,8 +95,8 @@ def calcDfbf( F, numFrames ):
         F.shape = (numCells, numTrials, -1)
         F = F[:, :, :-1]    # Trim off the last frame
     else:
-        print( "Error: wrong number of frames {} * {} != {}".format( numTrails, numFrames, F.shape ) )
-        quit()
+        print( "Error: wrong number of frames {} * {} != {}".format( numTrials, numFrames, F.shape ) )
+        return []
 
     # Use the 10th percentile activity as baseline
     baselines = np.percentile( F, 10.0, axis = 2 )
@@ -175,6 +175,9 @@ def main():
                         dfbf = dat['dfbf']
                     elif 'F' in dat:
                         dfbf = calcDfbf( dat['F'], 232 )
+                        if len( dfbf ) == 0:
+                            print( "BAAAAAD: dfbf dimensions don't work: ",  mouseName + "/" + date + "/" + matfile )
+                            continue
                     else:
                         print( "BAAAAAD: no dfbf found: ",  mouseName + "/" + date + "/" + matfile )
                         continue
@@ -188,17 +191,18 @@ def main():
                     idx2 = [ i % sh[1] for i in range( sh[0] * sh[1] ) ]
                     dfbf2 = dfbf.reshape(sh[0] * sh[1], -1 )
                     #print("SHAPE2 = ", dfbf2.shape )
-                    '''
                     df = pd.DataFrame(dfbf2, index=[idx1, idx2])
-                    '''
                     csFrame = 93
                     usFrame = 97
-                    cols = [[csFrame, usFrame]] * sh[0]*sh[1]
-                    df = pd.DataFrame( cols, columns = ["csFrame", "usFrame"], index=[idx1, idx2] )
-                    df["frames"] = dfbf2.tolist()
-                        
+                    df["csFrame"] = [csFrame] * sh[0]*sh[1]
+                    df["usFrame"] = [usFrame] * sh[0]*sh[1]
+                    '''
+                    '''
+                    #cols = [[csFrame, usFrame]] * sh[0]*sh[1]
+                    #df = pd.DataFrame( cols, columns = ["csFrame", "usFrame"], index=[idx1, idx2] )
+                    #df["frames"] = dfbf2.tolist()
 
-                    ax1, ax2 = dfbf2.shape
+                    #ax1, ax2 = dfbf2.shape
                     #print( "  DFBF2 = ", dfbf2.shape, sh[0], sh[1], ax1, ax2 )
 
                     frames.append( df )
@@ -247,7 +251,7 @@ def main():
         if len( bframes) > 0:
             behavSessionFrames.append( pd.concat( bframes, keys = bdates ) )
         mouseNameList.append( mouseName )
-        print( "\nAnalyze Mouse: ", mouseName )
+        print( "\n-----------------------" )
     #fullSet = pd.concat( sessionFrames, keys = mouseNameList )
     #fullSet.index.names = ["mouse", "date", "cell", "trial"]
     if len( behavSessionFrames ) > 0:
