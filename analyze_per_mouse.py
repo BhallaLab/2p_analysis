@@ -19,6 +19,8 @@ NUM_FRAMES = 240
 PEAK_HALF_WIDTH = 3
 BLANK_USFRAME_THRESH = 5.0  # # of stdevs beyond which we blank usframe
 hitKernel = np.array( [0.25, 0.5, 0.25] )
+FRAME_START = 0
+FRAME_START = 232
 
 
 def main():
@@ -28,7 +30,6 @@ def main():
     parser.add_argument( "-ht", "--hit_trial_thresh",  type = float, help = "Optional: Threshold of percentage of hit trials that each session must have in order to count as significant PSTH response.", default = 30.0 )
     parser.add_argument( "--trace_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [87, 92], metavar = ("start_frame", "end frame")  )
     parser.add_argument( "--baseline_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [70, 80], metavar = ("start_frame", "end frame")  )
-    parser.add_argument( "-c", "--context", type = str, help = "Optional: Data context. Options are hrishi, soumya and synthetic", default = "soumya" )
     args = parser.parse_args()
 
     t0 = time.time()
@@ -48,23 +49,23 @@ def main():
     print ("Sorting took {:.2f} sec and uses {:.2f} MB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**2) ) )
     behavData = pd.read_hdf(args.filename, "behavData")
     print( "Time to load = ", time.time() - t0 )
-    csFrame = np.full( len( p2data ), args.trace_frames[0] )
-    usFrame = np.full( len( p2data ), args.trace_frames[1] )
-    print ("adding CS and US took {:.2f} sec and uses {:.2f} MB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**2) ) )
-    frames = addColumns( p2data, csFrame, usFrame )
+    #csFrame = np.full( len( p2data ), args.trace_frames[0] )
+    #usFrame = np.full( len( p2data ), args.trace_frames[1] )
+    #print ("adding CS and US took {:.2f} sec and uses {:.2f} MB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**2) ) )
+    addColumns( p2data )
     print ("adding columns took {:.2f} sec and uses {:.2f} MB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**2) ) )
     print( "Finished adding columns" )
     #sns.pairplot( dataset.loc['G141','20190913'][['prePk1','prePos1','csPk','csPkPos','postPk1','postPos1']], hue='csPk' )
     #displayPeakHisto( p2data, pkName = "csPk", posName = "csPkPos", numSdev = 3.0, hitRatio = 0.3, mouse = "G141", date = "20190913" )
 
 
-    return p2data, behavData, frames
+    return p2data, behavData
 
-def displayAllFrames( p2data, frames, sortStartFrame = 40, sortEndFrame = -1, usFrame = -1 ):
+def displayAllFrames( p2data, sortStartFrame = 40, sortEndFrame = -1, usFrame = -1 ):
     for mouse in p2data.index.levels[0]:
         for date in p2data.loc[mouse].index.get_level_values(0).unique():
             print( "Mouse = ", mouse, ", date = ", date )
-            displayPSTH( p2data, frames, sortStartFrame = sortStartFrame, sortEndFrame = sortEndFrame, usFrame = usFrame, mouse = mouse, date = date )
+            displayPSTH( p2data, sortStartFrame = sortStartFrame, sortEndFrame = sortEndFrame, usFrame = usFrame, mouse = mouse, date = date )
 
 
 def findAndIsolateFramePeak( dfbf2, startFrame, endFrame, halfWidth ):
@@ -89,15 +90,11 @@ def findAndIsolateFramePeak( dfbf2, startFrame, endFrame, halfWidth ):
     return np.array( peakVal ), peakPos
 
 
-def addColumns( df, csFrame, usFrame ):
-    y = np.unique( len( df["frames"] ) )
-    print( "Frame range = ", y )
-    assert len( y ) == 1
-
+def addColumns( df ):
     csFrame = df["csFrame"]
     usFrame = df["usFrame"]
     print( "CSFRAME SHAPE === ", csFrame.shape, usFrame.shape )
-    dfbf2 = df.iloc[:, frameStart:frameEnd]
+    dfbf2 = df.iloc[:, FRAME_START:FRAME_END]
     perc = dfbf2.quantile( 80, axis = 1 )
     sd = dfbf2.std( axis = 1 )
     mn = dfbf2.mean( axis = 1 )
@@ -141,7 +138,7 @@ def displayPeakHisto( df, pkName = "csPk", posName = "csPkPos", numSdev = 3.0, h
     print( sdev )
     return pk, pos, sdev
 
-def displayPSTH( df, frames, sortStartFrame = 40, sortEndFrame = -1, usFrame = -1, mouse = "G141", date = "20190913" ):
+def displayPSTH( df, sortStartFrame = 40, sortEndFrame = -1, usFrame = -1, mouse = "G141", date = "20190913" ):
     if sortEndFrame == -1:
         sortEndFrame = 1000
     # generate heatMap normalized PSTH (full-frame) for specified session.
@@ -151,7 +148,7 @@ def displayPSTH( df, frames, sortStartFrame = 40, sortEndFrame = -1, usFrame = -
     # idxmax gives the index of the max value of a colum.
     # I want to sort by idxmax. Not look up array by idxmax.
     
-    psth = frames.loc[ (mouse, date) ].mean( axis = 0, level = 0 )
+    psth = df.loc[ (mouse, date)].iloc[:, START_FRAME: END_FRAME ].mean( axis = 0, level = 0 )
     sdev = df.loc[(mouse, date)]["sdev80"].mean( axis = 0, level = 0 )
     ratio = psth.div( sdev, axis = 0 )
 
@@ -196,7 +193,7 @@ def innerPlotHisto( figname, mouse, data, fignum ):
     return img
 
 
-def responderStats( df, frames, sigThresh = 5.0, hitSigThresh = 2.5, hitThresh = 0.15, pk = "csPk", pos = "csPkPos" ):
+def responderStats( df, sigThresh = 5.0, hitSigThresh = 2.5, hitThresh = 0.15, pk = "csPk", pos = "csPkPos" ):
     hitKernel = np.array( [0.67, 1.0, 0.67] )
     '''
     Report 
