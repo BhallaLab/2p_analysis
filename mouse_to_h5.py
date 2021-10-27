@@ -65,8 +65,8 @@ def fillContext():
         checkFname = checkSoumyaDataFileName )
 
     ret["hrishi"] = Context( "hrishi", 
-        imagingMice = ['G404', 'G405', 'G394'],
-        behaviourMice=['G404', 'G405', 'G394'],
+        imagingMice = ['G404', 'G405', 'G394', 'G409'],
+        behaviourMice=['G404', 'G405', 'G394', 'G409'],
         dataDirectory = "/home1/bhalla/hrishikeshn/suite2p_output/",
         fileNamePrefix = "2D",
         padding = "/1/suite2p/plane0/",
@@ -86,16 +86,17 @@ def fillContext():
 
 def calcDfbf( F, numFrames ):
     # F comes in as F[ cell, trial* frame]. Reshape to [cell, trial, frame]
+    # Ensure that numframes is 232 by padding or trimming.
     numCells = F.shape[0]
     numTrials = F.shape[1] // numFrames
-    if numTrials * numFrames != F.shape[1]:
-        # Try 233 frames:
-        numFrames += 1
-        numTrials = F.shape[1] // numFrames
-        if numTrials * numFrames != F.shape[1]:
-            print( "Error: wrong number of frames {} * {} != {}".format( numTrails, numFrames, F.shape[1] ) )
-            quit()
-    F.shape = ( numCells, numTrials, -1 )
+    if numTrials * numFrames == F.shape[1]: # Regular shape
+        F.shape = ( numCells, numTrials, -1 )
+    elif numTrials * (numFrames+1) == F.shape[1]: #handle case of 233 frames
+        F.shape = (numCells, numTrials, -1)
+        F = F[:, :, :-1]    # Trim off the last frame
+    else:
+        print( "Error: wrong number of frames {} * {} != {}".format( numTrails, numFrames, F.shape ) )
+        quit()
 
     # Use the 10th percentile activity as baseline
     baselines = np.percentile( F, 10.0, axis = 2 )
@@ -114,9 +115,6 @@ def calcDfbf( F, numFrames ):
         quit()
     print( "DFBF shape = ", dfbf.shape )
     return dfbf
-
-
-
 
 imagingSessionNames = ['1', '2', '3']
 NUM_FRAMES = 240
