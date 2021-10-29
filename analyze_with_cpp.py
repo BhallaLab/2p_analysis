@@ -11,6 +11,7 @@ import os
 import psutil   # to track memory usage.
 import argparse
 import seaborn as sns
+import a2p
 
 sns.set()
 
@@ -97,8 +98,8 @@ def addColumns( df ):
     usFrame = df["usFrame"]
     print( "CSFRAME SHAPE === ", csFrame.shape, usFrame.shape )
     dfbf2 = df.iloc[:, FRAME_START:FRAME_END]
-    print( "dfbf2 SHAPE === ", dfbf2.shape, "  NNNN  ", np.array( dfbf2 ).shape )
-    perc = dfbf2.quantile( 0.80, axis = 1 )
+    print( "dfbf2 SHAPE === ", dfbf2.shape ) 
+    #perc = dfbf2.quantile( 0.80, axis = 1 )
     sd = dfbf2.std( axis = 1 )
     mn = dfbf2.mean( axis = 1 )
 
@@ -111,9 +112,23 @@ def addColumns( df ):
     t1 = time.time()
 
     zeros = [0] * len( df )
-    df['prePk1'], df['prePos1'] = findAndIsolateFramePeak( dfbf2, zeros, csFrame -1, PEAK_HALF_WIDTH )
-    df['csPk'], df['csPkPos'] = findAndIsolateFramePeak( dfbf2, csFrame, usFrame, PEAK_HALF_WIDTH )
-    df['postPk1'], df['postPos1'] = findAndIsolateFramePeak( dfbf2, usFrame, [len( dfbf2[0] )] * len( dfbf2 ),PEAK_HALF_WIDTH )
+
+    ret = a2p.findFramePeak( dfbf2, zeros, csFrame-1, PEAK_HALF_WIDTH )
+    # findFramePeak returns a single vector, first half is pk values and 
+    # second half is indices of those pks.
+    df['prePk1'] = ret[:len( usFrame )]
+    df['prePos'] = ret[len( usFrame):].astype(int)
+
+    ret = a2p.findFramePeak( dfbf2, csFrame, usFrame, PEAK_HALF_WIDTH )
+    df['csPk'] = ret[:len( usFrame )]
+    df['csPos'] = ret[len( usFrame ):].astype(int)
+
+    ret = a2p.findFramePeak( dfbf2, usFrame, [dfbf2.shape[1]] * len( usFrame ) ,PEAK_HALF_WIDTH )
+    df['postPk1'] = ret[:len( usFrame )]
+    df['postPos'] = ret[len( usFrame ):].astype(int)
+
+    print ( "csPk = ", df['csPk'] )
+    print ( "csPos = ", df['csPos'] )
     print( df.head() )
 
     print ("pk and pos took {:.2f} sec and uses {:.2f} GB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
