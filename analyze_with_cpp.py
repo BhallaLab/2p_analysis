@@ -20,8 +20,8 @@ NUM_FRAMES = 240
 PEAK_HALF_WIDTH = 3
 BLANK_USFRAME_THRESH = 5.0  # # of stdevs beyond which we blank usframe
 hitKernel = np.array( [0.25, 0.5, 0.25] )
-FRAME_START = 0
-FRAME_END = 232
+START_FRAME = 0
+END_FRAME = 232
 
 
 def main():
@@ -41,34 +41,83 @@ def main():
     for mn in mouseNames[0]:
         mdf.append( pd.read_hdf( args.filename, mn ) )
         print( "Loading mouse data : ", mn )
-    p2data = pd.concat( mdf, keys = mouseNames[0] )
+    p2data = pd.concat( mdf, keys = mouseNames[0], names = ["mouse", "date", "cell", "trial"] )
+    #print( "COOOOOOOOOOLUMN names = ", p2data.columns.values.tolist( ) )
     t1 = time.time()
     print ("Loading took {:.2f} sec and uses {:.2f} GB ".format( t1 - t0, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
-    # The pandas_2p.py has put the names for the multi-index in p2data:
-    print( "INDEX NAMES = ", p2data.index.names )
     p2data.sort_index( inplace = True )
     print ("Sorting took {:.2f} sec and uses {:.2f} GB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
     t1 = time.time()
     behavData = pd.read_hdf(args.filename, "behavData")
     print ("Reading Behav data took {:.2f} sec and uses {:.2f} GB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
     t1 = time.time()
-    #csFrame = np.full( len( p2data ), args.trace_frames[0] )
-    #usFrame = np.full( len( p2data ), args.trace_frames[1] )
-    #print ("adding CS and US took {:.2f} sec and uses {:.2f} %B ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
+    analyzeBehaviour( behavData, p2data, args )
+    print ("analyzeBehaviour took {:.2f} sec and uses {:.2f} GB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
+
+    t1 = time.time()
     addColumns( p2data )
     print ("adding columns took {:.2f} sec and uses {:.2f} GB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
-    print( "Finished adding columns" )
+
     #sns.pairplot( dataset.loc['G141','20190913'][['prePk1','prePos1','csPk','csPkPos','postPk1','postPos1']], hue='csPk' )
     #displayPeakHisto( p2data, pkName = "csPk", posName = "csPkPos", numSdev = 3.0, hitRatio = 0.3, mouse = "G141", date = "20190913" )
 
-
     return p2data, behavData
 
-def displayAllFrames( p2data, sortStartFrame = 40, sortEndFrame = -1, usFrame = -1 ):
+def estimateCS( gb ):
+    return a2p.estimateCS( np.array( gb ) )
+
+def expandCS( csScore, numCells ):
+    CS_MIN = 80
+    CS_MAX = 120
+    CONFIDENCE_THRESH = 5.0
+    unit = np.array( [i[0] for i in csScore] )
+    confidence = np.array( [i[1] for i in csScore] )
+    unit[ confidence < CONFIDENCE_THRESH ] = 94
+    unit[ (unit < CS_MIN) | (unit > CS_MAX)] = 94
+    return np.tile( unit, numCells )
+
+def analyzeBehaviour( behavData, p2data, args ):
+    # Currently a placeholder.
+    # Just put in better estimates for the trace period.
+    #df = p2data.loc['G394','20210130'].iloc[:,START_FRAME:END_FRAME]
+    '''
+    df = p2data.loc['G404','20210304'].iloc[:,START_FRAME:END_FRAME]
+    print( "DF SHAPE = ", df.shape )
+    print( df )
+    trialNum = 2
+    print( df.loc[ df.index.get_level_values(1) == trialNum] )
+    for trialNum in range( 60 ):
+        fr, conf = a2p.estimateCS( np.array(df.loc[ df.index.get_level_values(1) == trialNum] ))
+        print( "Trial {}: frame = {}, confidence = {:.2f}".format( trialNum, fr, conf ) )
+    arr = df.groupby( level = "trial" )
+    print( "ARRRRRRRRRRR: " )
+    print( arr )
+    ret = df.groupby( level = "trial" ).apply( estimateCS )
+    print("RET = " )
+    print( ret )
+    print( ret.shape )
+    print("NP SHAPE  = ", np.array( ret).shape )
+    '''
+    cs = []
+    for mouse in p2data.index.levels[0]:
+        for date in p2data.loc[mouse].index.get_level_values(0).unique():
+            df = p2data.loc[mouse,date].iloc[:,START_FRAME:END_FRAME]
+            numTrials = len( df[0][0] )
+            csScore = df.groupby( level = "trial" ).apply( estimateCS )
+            cs.extend( expandCS( csScore, len(df)//numTrials ) )
+    print( "IN analyzeBehavior, ", len( cs ), len( p2data ) )
+
+    cs = np.array( cs )
+    p2data["csFrame"] = cs
+    p2data["usFrame"] = cs + 5
+    #p2data["csFrame"] = np.full( len( p2data ), args.trace_frames[0] )
+    #p2data["usFrame"] = np.full( len( p2data ), args.trace_frames[1] )
+
+def displayAllFrames( p2data, sortStartFrame = 40, sortEndFrame = -1 ):
     for mouse in p2data.index.levels[0]:
         for date in p2data.loc[mouse].index.get_level_values(0).unique():
             print( "Mouse = ", mouse, ", date = ", date )
-            displayPSTH( p2data, sortStartFrame = sortStartFrame, sortEndFrame = sortEndFrame, usFrame = usFrame, mouse = mouse, date = date )
+            displayPSTH( p2data, sortStartFrame = sortStartFrame, sortEndFrame = sortEndFrame, csFrame = p2data['csFrame'], mouse = mouse, date = date )
 
 
 def findAndIsolateFramePeak( dfbf2, startFrame, endFrame, halfWidth ):
@@ -96,8 +145,8 @@ def addColumns( df ):
     t1 = time.time()
     csFrame = df["csFrame"]
     usFrame = df["usFrame"]
-    print( "CSFRAME SHAPE === ", csFrame.shape, usFrame.shape )
-    dfbf2 = df.iloc[:, FRAME_START:FRAME_END]
+    #print( "CSFRAME SHAPE === ", csFrame.shape, usFrame.shape )
+    dfbf2 = df.iloc[:, START_FRAME:END_FRAME]
     print( "dfbf2 SHAPE === ", dfbf2.shape ) 
     #perc = dfbf2.quantile( 0.80, axis = 1 )
     sd = dfbf2.std( axis = 1 )
@@ -127,10 +176,6 @@ def addColumns( df ):
     df['postPk1'] = ret[:len( usFrame )]
     df['postPos'] = ret[len( usFrame ):].astype(int)
 
-    print ( "csPk = ", df['csPk'] )
-    print ( "csPos = ", df['csPos'] )
-    print( df.head() )
-
     print ("pk and pos took {:.2f} sec and uses {:.2f} GB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
 
 
@@ -143,7 +188,7 @@ def displayPeakHisto( df, pkName = "csPk", posName = "csPkPos", numSdev = 3.0, h
     # Sort all histos by peak time.
     pk = df.loc[(mouse, date)][pkName]
     pos = df.loc[(mouse, date)][posName]
-    sdev = df.loc[(mouse, date)]["sdev80"]
+    sdev = df.loc[(mouse, date)]["sdev"]
     numTrials = len( pk[0] )
     numCells = len( pk ) // numTrials
     #################
@@ -160,9 +205,9 @@ def displayPeakHisto( df, pkName = "csPk", posName = "csPkPos", numSdev = 3.0, h
     print( sdev )
     return pk, pos, sdev
 
-def displayPSTH( df, sortStartFrame = 40, sortEndFrame = -1, usFrame = -1, mouse = "G141", date = "20190913" ):
+def displayPSTH( df, sortStartFrame = 40, sortEndFrame = -1, csFrame = -1, mouse = "G141", date = "20190913" ):
     if sortEndFrame == -1:
-        sortEndFrame = 1000
+        sortEndFrame = END_FRAME
     # generate heatMap normalized PSTH (full-frame) for specified session.
     # Sorted by peak within specified range.
     # I want to average all the psths for a given cell
@@ -171,31 +216,32 @@ def displayPSTH( df, sortStartFrame = 40, sortEndFrame = -1, usFrame = -1, mouse
     # I want to sort by idxmax. Not look up array by idxmax.
     
     psth = df.loc[ (mouse, date)].iloc[:, START_FRAME: END_FRAME ].mean( axis = 0, level = 0 )
-    sdev = df.loc[(mouse, date)]["sdev80"].mean( axis = 0, level = 0 )
+    sdev = df.loc[(mouse, date)]["sdev"].mean( axis = 0, level = 0 )
     ratio = psth.div( sdev, axis = 0 )
+    print( "RATIO SHAPE  = ", ratio.shape )
 
-    # Check for usFrame as the one which has the highest peak 
-    # averaged over all cells. Use this option if usFrame == -1.
-    if usFrame == -1:
+    # Check for csFrame as the one which has the highest peak 
+    # averaged over all cells. Use this option if csFrame == -1.
+    if csFrame == -1:
         mn = ratio.mean( axis = 0 )
         if mn.max() / mn.std() > BLANK_USFRAME_THRESH:
-            usFrame = mn.idxmax()
-            ratio.loc[:,usFrame] = 0    # blank out the biggest response.
-        print( "{}/{} Max = {:.4f} at {}".format( mouse, date, mn.max(), mn.idxmax() ) )
+            csFrame = mn.idxmax()
+            ratio.loc[:,csFrame] = 0    # blank out the biggest response.
+        print( "{}/{} Max = {:.4f} at {};   Min = {}".format( mouse, date, mn.max(), mn.idxmax(), mn.min() ) )
     else:
-        ratio.loc[:,usFrame] = 0    # blank out the defined US response.
+        ratio.loc[:,csFrame] = 0    # blank out the defined US response.
+        for i, j in enumerate( csFrame ): # Most unpanda
+            ratio[i, j] = 0
 
-    idxmax = ratio.loc[:, sortStartFrame:sortEndFrame].idxmax( axis = 1 )
+    print( "sortStartFrame:sortEndFrame", sortStartFrame, sortEndFrame )
+
+    idxmax = ratio.iloc[:, sortStartFrame:sortEndFrame].idxmax( axis = 1 )
     sortedIdx = idxmax.sort_values().index
     sortedRatio = ratio.reindex( sortedIdx )
     fig = plt.figure( figsize = (12,4 ))
-    plt.imshow( np.log10( sortedRatio ) )
+    #plt.imshow( np.log10( sortedRatio ) )
+    plt.imshow( sortedRatio )
     plt.show()
-    '''
-    '''
-
-    return psth, sdev
-
 
 hasBar = False
 def innerPlotHisto( figname, mouse, data, fignum ):
@@ -244,8 +290,8 @@ def responderStats( df, sigThresh = 5.0, hitSigThresh = 2.5, hitThresh = 0.15, p
     ax2.set_xlabel( "Frame #" )
     ax2.set_ylabel( "# of time cells" )
 
-    bigPkIdx = df[pos][ (df[pk]/df["sdev80"]) > sigThresh ]
-    hitPkIdx = df[pos][ (df[pk]/df["sdev80"]) > hitSigThresh ]
+    bigPkIdx = df[pos][ (df[pk]/df["sdev"]) > sigThresh ]
+    hitPkIdx = df[pos][ (df[pk]/df["sdev"]) > hitSigThresh ]
     #I'm sure there is a clean way to get the num of dates for each mouse.
     # Need to normalize by number of cells.
     for mousenum, mouse in enumerate( df.index.levels[0] ):
@@ -305,7 +351,7 @@ def responderStats( df, sigThresh = 5.0, hitSigThresh = 2.5, hitThresh = 0.15, p
     numFrames = max( bigPkIdx ) - min( bigPkIdx )
     histo = np.histogram( bigPkIdx.groupby(level=["mouse", "date"] ), bins = numFrames )
     # Value counts leaves out bins, so I should do np.histogram
-    bar = df[pos][ (df[pk]/df["sdev80"]) > sigThresh ].groupby( level = ["mouse", "date"] )
+    bar = df[pos][ (df[pk]/df["sdev"]) > sigThresh ].groupby( level = ["mouse", "date"] )
 
     if pk == "csPk":
         width = 2

@@ -192,8 +192,8 @@ def main():
                     dfbf2 = dfbf.reshape(sh[0] * sh[1], -1 )
                     #print("SHAPE2 = ", dfbf2.shape )
                     df = pd.DataFrame(dfbf2, index=[idx1, idx2])
-                    csFrame = 93
-                    usFrame = 97
+                    csFrame = 87
+                    usFrame = 92
                     df["csFrame"] = [csFrame] * sh[0]*sh[1]
                     df["usFrame"] = [usFrame] * sh[0]*sh[1]
                     '''

@@ -14,3 +14,10 @@ py::array_t< double > findFramePeak(
 				const py::array_t< int >& endFrame,  
 				int halfWidth
 );
+
+pair< int, double>  estimateCS( const py::array_t< double > &dfbf);
+
+py::array_t< double > alignAllFrames( 
+				const py::array_t< double > &dfbf,
+				const py::array_t< int >& startFrame
+);
