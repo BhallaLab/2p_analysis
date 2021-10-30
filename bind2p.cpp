@@ -20,6 +20,7 @@ PYBIND11_MODULE(a2p, m) {
 	m.doc() = "Fast analysis functions for 2p mouse data";
 	m.def("findFramePeak", &findFramePeak, py::return_value_policy::copy);
 	m.def("estimateCS", &estimateCS, py::return_value_policy::copy);
-	m.def("alignAllFrames", &alignAllFrames, py::return_value_policy::copy);
+	m.def("alignAllFrames", &alignAllFrames);
+	// m.def("alignAllFrames", &alignAllFrames, py::return_value_policy::copy);
 }
 

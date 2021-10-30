@@ -23,6 +23,11 @@ hitKernel = np.array( [0.25, 0.5, 0.25] )
 START_FRAME = 0
 END_FRAME = 232
 
+def reportMemoryUse( name, t1 ):
+    t2 = time.time()
+    mem = psutil.Process(os.getpid()).memory_info().rss + psutil.Process(os.getpid()).memory_info().vms
+    print ("{} took {:.2f} sec and uses {:.2f} GB ".format( name, t2 - t1, mem/(1024**3) ) )
+    return t2
 
 def main():
     parser = argparse.ArgumentParser( description = "This is a program for analyzing a 2P dataset stored in hdf5 format" )
@@ -33,30 +38,43 @@ def main():
     parser.add_argument( "--baseline_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [70, 80], metavar = ("start_frame", "end frame")  )
     args = parser.parse_args()
 
-    t0 = time.time()
+    t1 = time.time()
     #pd.read_hdf("store_tl.h5", "table", where=["index>2"])
     mouseNames = pd.read_hdf(args.filename, "MouseNames")
     #print( mouseNames )
     mdf = []
     for mn in mouseNames[0]:
-        mdf.append( pd.read_hdf( args.filename, mn ) )
-        print( "Loading mouse data : ", mn )
+        df1 = pd.read_hdf( args.filename, mn )
+        idx = df1.index
+        cs = fillCS( df1 )
+        #print( df )
+        temp = a2p.alignAllFrames( df1.iloc[:, START_FRAME:END_FRAME], cs )
+        df = pd.DataFrame( temp, index = idx )
+        df["csFrame"] = cs
+        df["usFrame"] = cs + 5
+        #print( df )
+        mdf.append( df )
+        t1 = reportMemoryUse( mn, t1 )
     p2data = pd.concat( mdf, keys = mouseNames[0], names = ["mouse", "date", "cell", "trial"] )
     #print( "COOOOOOOOOOLUMN names = ", p2data.columns.values.tolist( ) )
-    t1 = time.time()
-    print ("Loading took {:.2f} sec and uses {:.2f} GB ".format( t1 - t0, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
-    p2data.sort_index( inplace = True )
-    print ("Sorting took {:.2f} sec and uses {:.2f} GB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
-    t1 = time.time()
-    behavData = pd.read_hdf(args.filename, "behavData")
-    print ("Reading Behav data took {:.2f} sec and uses {:.2f} GB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
-    t1 = time.time()
-    analyzeBehaviour( behavData, p2data, args )
-    print ("analyzeBehaviour took {:.2f} sec and uses {:.2f} GB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
+    t1 = reportMemoryUse( "Loading", t1 )
 
-    t1 = time.time()
+    p2data.sort_index( inplace = True )
+    t1 = reportMemoryUse( "Sorting", t1 )
+
+    behavData = pd.read_hdf(args.filename, "behavData")
+    t1 = reportMemoryUse( "Reading Behav data", t1 )
+
+    analyzeBehaviour( behavData, p2data, args )
+    t1 = reportMemoryUse( "analyzeBehaviour", t1 )
+
     addColumns( p2data )
-    print ("adding columns took {:.2f} sec and uses {:.2f} GB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
+    t1 = reportMemoryUse( "adding columns", t1 )
+
+    #print( p2data )
+    #p2data.iloc[:, START_FRAME:END_FRAME] = a2p.alignAllFrames( p2data.iloc[:, START_FRAME:END_FRAME], p2data['csFrame'] )
+    #print( p2data )
+    #t1 = reportMemoryUse( "alignFrames", t1 )
 
     #sns.pairplot( dataset.loc['G141','20190913'][['prePk1','prePos1','csPk','csPkPos','postPk1','postPos1']], hue='csPk' )
     #displayPeakHisto( p2data, pkName = "csPk", posName = "csPkPos", numSdev = 3.0, hitRatio = 0.3, mouse = "G141", date = "20190913" )
@@ -75,6 +93,17 @@ def expandCS( csScore, numCells ):
     unit[ confidence < CONFIDENCE_THRESH ] = 94
     unit[ (unit < CS_MIN) | (unit > CS_MAX)] = 94
     return np.tile( unit, numCells )
+
+def fillCS( df1 ):
+    cs = []
+    for date in df1.index.get_level_values(0).unique():
+        df = df1.loc[date].iloc[:,START_FRAME:END_FRAME]
+        numTrials = len( df[0][0] )
+        csScore = df.groupby( level = "trial" ).apply( estimateCS )
+        cs.extend( expandCS( csScore, len(df)//numTrials ) )
+    return np.array( cs )
+    #df1["csFrame"] = cs
+    #df1["usFrame"] = cs + 5
 
 def analyzeBehaviour( behavData, p2data, args ):
     # Currently a placeholder.
@@ -98,6 +127,7 @@ def analyzeBehaviour( behavData, p2data, args ):
     print( ret.shape )
     print("NP SHAPE  = ", np.array( ret).shape )
     '''
+    '''
     cs = []
     for mouse in p2data.index.levels[0]:
         for date in p2data.loc[mouse].index.get_level_values(0).unique():
@@ -110,8 +140,10 @@ def analyzeBehaviour( behavData, p2data, args ):
     cs = np.array( cs )
     p2data["csFrame"] = cs
     p2data["usFrame"] = cs + 5
+    '''
     #p2data["csFrame"] = np.full( len( p2data ), args.trace_frames[0] )
     #p2data["usFrame"] = np.full( len( p2data ), args.trace_frames[1] )
+    return
 
 def displayAllFrames( p2data, sortStartFrame = 40, sortEndFrame = -1 ):
     for mouse in p2data.index.levels[0]:
@@ -136,7 +168,7 @@ def findAndIsolateFramePeak( dfbf2, startFrame, endFrame, halfWidth ):
         peakVal.append( window.max() )
         peakPos.append( window.argmax() )
         pp = window.argmax()
-    print ("Finding Frame Pk took {:.2f} sec and uses {:.2f} GB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
+    print ("Finding Frame Pk took {:.2f} sec and uses {:.2f} GB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().used/(1024**3) ) )
     
     return np.array( peakVal ), peakPos
 
@@ -157,8 +189,7 @@ def addColumns( df ):
     df['mean'] = mn
     #df['paddedFrames' ] = dfbf2.tolist()
     print( "Computed mean and SD for dataframe")
-    print ("mean and SD took {:.2f} sec and uses {:.2f} GB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
-    t1 = time.time()
+    t1 = reportMemoryUse( "Mean and SD", t1 )
 
     zeros = [0] * len( df )
 
@@ -176,8 +207,7 @@ def addColumns( df ):
     df['postPk1'] = ret[:len( usFrame )]
     df['postPos'] = ret[len( usFrame ):].astype(int)
 
-    print ("pk and pos took {:.2f} sec and uses {:.2f} GB ".format( time.time() - t1, psutil.Process(os.getpid()).memory_info().rss/(1024**3) ) )
-
+    t1 = reportMemoryUse( "pk and pos", t1 )
 
 def displayPeakHisto( df, pkName = "csPk", posName = "csPkPos", numSdev = 3.0, hitRatio = 0.2, mouse = "G141", date = "20190913" ):
     # Generate histo of positions for a given cell on a given session.
