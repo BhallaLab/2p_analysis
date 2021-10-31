@@ -38,6 +38,7 @@ def main():
     parser.add_argument( "--trace_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [87, 92], metavar = ("start_frame", "end frame")  )
     parser.add_argument( "--baseline_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [70, 80], metavar = ("start_frame", "end frame")  )
     parser.add_argument( '-daf', '--display_all_frames', action='store_true', help='Flag: when set, it displays PSTH of all frames.' )
+    parser.add_argument( '-dr', '--display_responders', type = str, help='Flag: when set, it displays responders in specified window: cs, pre, post' )
     args = parser.parse_args()
 
     t1 = time.time()
@@ -45,6 +46,9 @@ def main():
     t1 = reportMemoryUse( "Loaded and preprocessed all data", t1 )
     if args.display_all_frames:
         displayAllFrames( p2data )
+
+    if args.display_responders:
+        responderStats( p2data, args.display_responders )
     
 
 def loadData( args ):
@@ -183,48 +187,13 @@ def analyzeBehaviour( behavData, p2data, args ):
     #print( "unique usframes = {} ".format( p2data['usFrame'].unique() ) )
     t1 = reportMemoryUse( "Loaded Behaviour csvs", t1 )
 
+    '''
     # Check that this worked...
     for fname in behavFiles:
         mn = fname[:-5]
         print( "MOOOOOOUUUUUUSSSSSSEEEEEEEYYYY = ", mn )
         print( p2data.loc[(mn,slice(None),0,0)] )
-            
-        
     '''
-    df = p2data.loc['G404','20210304'].iloc[:,START_FRAME:END_FRAME]
-    print( "DF SHAPE = ", df.shape )
-    print( df )
-    trialNum = 2
-    print( df.loc[ df.index.get_level_values(1) == trialNum] )
-    for trialNum in range( 60 ):
-        fr, conf = a2p.estimateCS( np.array(df.loc[ df.index.get_level_values(1) == trialNum] ))
-        print( "Trial {}: frame = {}, confidence = {:.2f}".format( trialNum, fr, conf ) )
-    arr = df.groupby( level = "trial" )
-    print( "ARRRRRRRRRRR: " )
-    print( arr )
-    ret = df.groupby( level = "trial" ).apply( estimateCS )
-    print("RET = " )
-    print( ret )
-    print( ret.shape )
-    print("NP SHAPE  = ", np.array( ret).shape )
-    '''
-    '''
-    cs = []
-    for mouse in p2data.index.levels[0]:
-        for date in p2data.loc[mouse].index.get_level_values(0).unique():
-            df = p2data.loc[mouse,date].iloc[:,START_FRAME:END_FRAME]
-            numTrials = len( df[0][0] )
-            csScore = df.groupby( level = "trial" ).apply( estimateCS )
-            cs.extend( expandCS( csScore, len(df)//numTrials ) )
-    print( "IN analyzeBehavior, ", len( cs ), len( p2data ) )
-
-    cs = np.array( cs )
-    p2data["csFrame"] = cs
-    p2data["usFrame"] = cs + 5
-    '''
-    #p2data["csFrame"] = np.full( len( p2data ), args.trace_frames[0] )
-    #p2data["usFrame"] = np.full( len( p2data ), args.trace_frames[1] )
-    return
 
 def displayAllFrames( p2data, sortStartFrame = 40, sortEndFrame = -1 ):
     for mouse in p2data.index.levels[0]:
@@ -260,7 +229,7 @@ def addColumns( df ):
     usFrame = df["usFrame"]
     #print( "CSFRAME SHAPE === ", csFrame.shape, usFrame.shape )
     dfbf2 = df.iloc[:, START_FRAME:END_FRAME]
-    #print( "dfbf2 SHAPE === ", dfbf2.shape ) 
+    print( "dfbf2 SHAPE === ", dfbf2.shape ) 
     #perc = dfbf2.quantile( 0.80, axis = 1 )
     sd = dfbf2.std( axis = 1 )
     mn = dfbf2.mean( axis = 1 )
@@ -277,16 +246,24 @@ def addColumns( df ):
     ret = a2p.findFramePeak( dfbf2, zeros, csFrame-1, PEAK_HALF_WIDTH )
     # findFramePeak returns a single vector, first half is pk values and 
     # second half is indices of those pks.
-    df['prePk1'] = ret[:len( usFrame )]
+    df['prePk'] = ret[:len( usFrame )]
     df['prePos'] = ret[len( usFrame):].astype(int)
 
     ret = a2p.findFramePeak( dfbf2, csFrame, usFrame, PEAK_HALF_WIDTH )
     df['csPk'] = ret[:len( usFrame )]
     df['csPos'] = ret[len( usFrame ):].astype(int)
 
+    print( "----USFRAME-------------------------------------------------")
+    print( usFrame )
+    print( "usFrame mean = ", usFrame.mean() )
+    print( "--------------------------------------------------------------")
     ret = a2p.findFramePeak( dfbf2, usFrame, [dfbf2.shape[1]] * len( usFrame ) ,PEAK_HALF_WIDTH )
-    df['postPk1'] = ret[:len( usFrame )]
+    df['postPk'] = ret[:len( usFrame )]
     df['postPos'] = ret[len( usFrame ):].astype(int)
+
+    print( "csMeanPos = ", df['csPos'].mean(), df['csPk'].mean() )
+    print( "postMeanPos = ", df['postPos'].mean(), df['postPk'].mean() )
+    print( "--------------------------------------------------------------")
 
     t1 = reportMemoryUse( "pk and pos", t1 )
 
@@ -372,9 +349,42 @@ def innerPlotHisto( figname, mouse, data, fignum ):
     hasBar = True
     return img
 
+def boilerPlate( label ):
+    fig = plt.figure( label, figsize = (8, 12 ) )
+    ax1 = plt.subplot( 2, 1, 1 )
+    ax2 = plt.subplot( 2, 1, 2 )
+    quant = "#"
+    if label == "Responsive Cell":
+        quant = "%"
 
-def responderStats( df, sigThresh = 5.0, hitSigThresh = 2.5, hitThresh = 0.15, pk = "csPk", pos = "csPkPos" ):
+    ax1.set_title( label + " evolution over sessions" )
+    ax1.set_xlabel( "Session #" )
+    ax1.set_ylabel( quant + " of " + label + "s" )
+    ax2.set_title( label + " evolution over frames" )
+    ax2.set_xlabel( "Frame #" )
+    ax2.set_ylabel( quant + " of " + label + "s" )
+    return ax1, ax2
+
+
+def responderStats( df, window, sigThresh = 5.0, hitSigThresh = 2.5, hitThresh = 0.15):
+    NUM_SESSIONS = 25
+    pk = "csPk"
+    pos = "csPos"
+    startFrame = 95
+    endFrame = 98
     hitKernel = np.array( [0.67, 1.0, 0.67] )
+    if window == "pre":
+        pk = "prePk"
+        pos = "prePos"
+        startFrame = 40
+        endFrame = 93
+        hitKernel = np.array( [0.6, 0.8, 1.0, 0.8, 0.6] )
+    elif window == "post":
+        pk = "postPk"
+        pos = "postPos"
+        startFrame = 98
+        endFrame = END_FRAME
+        hitKernel = np.array( [0.6, 0.8, 1.0, 0.8, 0.6] )
     '''
     Report 
         - fraction of cells responding (in a given window?),
@@ -391,22 +401,19 @@ def responderStats( df, sigThresh = 5.0, hitSigThresh = 2.5, hitThresh = 0.15, p
     bins = range( pkRange +1 )
     fig1 = plt.figure( "psthStats", figsize = (6, 9 ) )
     fig2 = plt.figure( "hitStats", figsize = (6, 9 ) )
-    fig3 = plt.figure( "hitPlots", figsize = (6, 9 ) )
-    ax1 = plt.subplot( 2, 1, 1 )
-    ax2 = plt.subplot( 2, 1, 2 )
-
-    ax1.set_title( "Time cell evolution over sessions" )
-    ax1.set_xlabel( "Session #" )
-    ax1.set_ylabel( "# of time cells" )
-    ax2.set_title( "Time cell evolution over frames" )
-    ax2.set_xlabel( "Frame #" )
-    ax2.set_ylabel( "# of time cells" )
+    ax1, ax2 = boilerPlate( "Time Cell" )
+    ax3, ax4 = boilerPlate( "Responsive Cell" )
 
     bigPkIdx = df[pos][ (df[pk]/df["sdev"]) > sigThresh ]
     hitPkIdx = df[pos][ (df[pk]/df["sdev"]) > hitSigThresh ]
+    hitHistoSum = np.zeros( NUM_SESSIONS )
+    histoMean = np.zeros( NUM_SESSIONS )
+
+    print( "IDX means = ", bigPkIdx.mean(), hitPkIdx.mean() )
     #I'm sure there is a clean way to get the num of dates for each mouse.
     # Need to normalize by number of cells.
     for mousenum, mouse in enumerate( df.index.levels[0] ):
+        print( "MOUSE = ", mouse )
         mdf = df.loc[mouse]
         numTrials = mdf.index.levshape[-1]
         dates = mdf.index.unique( level = "date" )
@@ -417,7 +424,7 @@ def responderStats( df, sigThresh = 5.0, hitSigThresh = 2.5, hitThresh = 0.15, p
             hp = hitPkIdx.loc[mouse, date]
             numCells = mdf.loc[date, :, 0].shape[0]
             assert( numCells > 0 )
-            increment = 1.0 / numCells
+            increment = 100.0 / (numTrials * numCells) # Get %.
             for b in bp:    # iterating over all cells * all trails. 'b' is the frame index of pk
                 histo[i, b] += increment
             for cell in hp.index.unique( level = "cell" ):
@@ -429,13 +436,35 @@ def responderStats( df, sigThresh = 5.0, hitSigThresh = 2.5, hitThresh = 0.15, p
             # Here we can threshold innerHitHisto to find a time cell, and its frame.
             # Would like a raster of verified time cells for each session.
 
+        histo = histo[:,startFrame:endFrame]
+        hitHisto = hitHisto[:,startFrame:endFrame]
+        #print( "Hit Stats line = ", hitHisto[2:5,:] )
         innerPlotHisto( "psthStats", mouse, histo, mousenum + 1 )
         innerPlotHisto( "hitStats", mouse, hitHisto, mousenum + 1 )
-        ax1.plot( range( hitHisto.shape[0] ), np.sum( hitHisto, axis = 1 ), label = mouse )
+        hs1 = np.sum( hitHisto, axis = 1 )
+        ax1.plot( range( hitHisto.shape[0] ), hs1, label = mouse )
+        if len( hs1 ) > NUM_SESSIONS:
+            hitHistoSum += hs1[:NUM_SESSIONS]
+        else:
+            hitHistoSum[:len( hs1 )] += hs1
         ax2.plot( range( hitHisto.shape[1] ), np.sum( hitHisto, axis = 0 ), label = mouse )
+        hs3 = np.sum( histo, axis = 1 )
+        ax3.plot( range( histo.shape[0] ), hs3, label = mouse )
+        if len( hs3 ) > NUM_SESSIONS:
+            histoMean += hs3[:NUM_SESSIONS]
+        else:
+            histoMean[:len( hs3 )] += hs3
+        ax4.plot( range( histo.shape[1] ), np.sum( histo, axis = 0 ), label = mouse )
+        #ax1.plot( range( hitHisto.shape[0] ), np.sum( hitHisto, axis = 1 ), label = mouse )
+        #ax2.plot( range( hitHisto.shape[1] ), np.sum( hitHisto, axis = 0 ), label = mouse )
     #fig1.colorbar( img )
+    ax1.plot( range( len( hitHistoSum ) ), hitHistoSum, label = "Sum", linewidth = 4 )
     ax1.legend()
     ax2.legend()
+    ax3.plot( range( len( histoMean ) ), histoMean / mousenum, label = "Mean", linewidth = 4)
+    ax3.legend()
+    ax4.legend()
+    plt.tight_layout()
     plt.show()
 
 
