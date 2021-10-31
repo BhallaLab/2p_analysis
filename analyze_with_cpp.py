@@ -22,6 +22,7 @@ BLANK_USFRAME_THRESH = 5.0  # # of stdevs beyond which we blank usframe
 hitKernel = np.array( [0.25, 0.5, 0.25] )
 START_FRAME = 0
 END_FRAME = 232
+DEFAULT_CS_BIN = 94
 
 def reportMemoryUse( name, t1 ):
     t2 = time.time()
@@ -57,6 +58,7 @@ def loadData( args ):
         df1 = pd.read_hdf( args.filename, mn )
         idx = df1.index
         cs = fillCS( df1 )
+        # print( "CS LEN = {}, CS = {}, NANs = {}".format( len( cs ), cs[:20], np.isnan(cs).sum() ) )
         #print( "CS LEN = {}, CS = {}".format( len( cs ), cs[:20] ) )
         #print( df )
         '''
@@ -77,8 +79,8 @@ def loadData( args ):
         '''
         df = pd.DataFrame( temp, index = idx )
         df["csFrame"] = cs
-        df["usFrame"] = cs + 5
-        #print( df )
+        df["usFrame"] = cs + 3  # We will reassign in 'analyzeBehaviour'
+        #print( df['usFrame'][:20], cs[:20] )
         mdf.append( df )
         t1 = reportMemoryUse( mn, t1 )
     p2data = pd.concat( mdf, keys = mouseNames[0], names = ["mouse", "date", "cell", "trial"] )
@@ -108,13 +110,13 @@ def estimateCS( gb ):
     return a2p.estimateCS( np.array( gb ) )
 
 def expandCS( csScore, numCells ):
-    CS_MIN = 80
-    CS_MAX = 120
+    CS_MIN = 60
+    CS_MAX = 110
     CONFIDENCE_THRESH = 5.0
     unit = np.array( [i[0] for i in csScore] )
     confidence = np.array( [i[1] for i in csScore] )
-    unit[ confidence < CONFIDENCE_THRESH ] = 92
-    unit[ (unit < CS_MIN) | (unit > CS_MAX)] = 97
+    unit[ confidence < CONFIDENCE_THRESH ] = DEFAULT_CS_BIN
+    unit[ (unit < CS_MIN) | (unit > CS_MAX)] = DEFAULT_CS_BIN
     return np.tile( unit, numCells )
 
 def fillCS( df1 ):
@@ -139,6 +141,7 @@ def analyzeBehaviour( behavData, p2data, args ):
 
     p2data['behaviour_code'] = "none"
     p2data['behaviour_day'] = 0
+    usFrame = np.array( p2data['csFrame'] ) + 3
     for fname in behavFiles:
         behavDict = {}
         bf = pd.read_csv( "BEHAV_FILES/" + fname, sep= "," )
@@ -153,16 +156,38 @@ def analyzeBehaviour( behavData, p2data, args ):
             behavDict[row['date']] = {"code":code, "day":row['behaviour_day']}
         for date, val in behavDict.items():
             sdate = str( date )
+            bcode = val['code']
+            extraTraceWidth = 0  # 3 frames for the baseline 250 ms trace.
+            if bcode == 'An1':
+                extraTraceWidth = 1
+            elif bcode == 'An2':
+                extraTraceWidth = 2
+            elif bcode == 'An3':
+                extraTraceWidth = 3     # Actually 6.38, assuming 11.6 fps
             if p2data.index.isin([(mn, sdate, 0, 0)]).any():
                 p2data.loc[(mn, sdate),['behaviour_code', 'behaviour_day']] = [[val['code'], val['day']]]
+                # Here we have to do a horrible workaround because the
+                # simple line below does not work. It produces NaNs.
+                #p2data.loc[(mn, sdate),['usFrame']] += int(extraTraceWidth)
+                # Instead we work on a numpy array and then we'll assign
+                # the whole thing. Here goes:
+                # Get index of rows that have to be assigned
+                idx = p2data.index.get_locs((mn, sdate))
+                usFrame[idx] += extraTraceWidth
+                #df.index.get_loc(df.index[df['b'] == 5][0])
+                #increment numpy array in the specified locations
 
+
+    p2data['usFrame'] = usFrame # End of workaround.
+    #print( "In AnalyzeBehav 4: P2data usframe = ", p2data['usFrame'][:20] )
+    #print( "unique usframes = {} ".format( p2data['usFrame'].unique() ) )
     t1 = reportMemoryUse( "Loaded Behaviour csvs", t1 )
 
     # Check that this worked...
     for fname in behavFiles:
         mn = fname[:-5]
         print( "MOOOOOOUUUUUUSSSSSSEEEEEEEYYYY = ", mn )
-        print( p2data.loc[mn] )
+        print( p2data.loc[(mn,slice(None),0,0)] )
             
         
     '''
@@ -235,7 +260,7 @@ def addColumns( df ):
     usFrame = df["usFrame"]
     #print( "CSFRAME SHAPE === ", csFrame.shape, usFrame.shape )
     dfbf2 = df.iloc[:, START_FRAME:END_FRAME]
-    print( "dfbf2 SHAPE === ", dfbf2.shape ) 
+    #print( "dfbf2 SHAPE === ", dfbf2.shape ) 
     #perc = dfbf2.quantile( 0.80, axis = 1 )
     sd = dfbf2.std( axis = 1 )
     mn = dfbf2.mean( axis = 1 )
