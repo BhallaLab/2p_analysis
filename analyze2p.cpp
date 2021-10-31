@@ -191,6 +191,8 @@ int alignAllFrames(
 
 // This does procrustean fitting. Still same # of frames.
 // This one returns the fitted frames
+// It is exceptionally nasty because the incoming array takes a different
+// row/column priority than the outgoing one.
 py::array_t< double > alignAllFrames( 
 				const py::array_t< double > &dfbf,
 				const py::array_t< int >& startFrame)
@@ -204,25 +206,38 @@ py::array_t< double > alignAllFrames(
 		throw std::runtime_error("dfbf size must match # of startFrame");
 	}
 
+	cout << "numTrials = " << numTrials << "; numFrames = " << numFrames << endl;
+
 	const double *pdbuf = (const double *) dbuf.ptr;
 	const int *psfbuf = (const int *) sfbuf.ptr;
 
 	py::array_t<double> result = py::array_t<double>(dbuf.size );
 	double *presult = (double *) result.request().ptr; 
+	// cout << "RESULT: numTrials = " << result.request().shape[0] << "; numFrames = " << result.request().shape[1] << endl;
 
 	for ( int i = 0; i < numTrials; i++ ) {
-		int idxoffset = psfbuf[i] - ALIGN_IDX;
+		/**
+		for ( int j = 0; j < 5; j++ )
+			presult[i*numFrames + j] = 0;
+		for ( int j = 5; j < numFrames; j++ ) // shift output rightward.
+			presult[i*numFrames + j] = pdbuf[ i + (j-5)*numTrials];
+		**/
+		int idxoffset = ALIGN_IDX - psfbuf[i];
 		int startidx = (idxoffset > 0 ? idxoffset: 0 );
 		int endidx = idxoffset + numFrames;
 		if ( endidx > numFrames )
 			endidx = numFrames;
+		// cout << i << ": idxoffset = " << idxoffset << ", endidx = " << endidx << endl;
 		for ( int j = 0; j < startidx; j++ )
-			presult[ i * numFrames + j] = 0.0;
+			presult[ i*numFrames + j] = 0.0;
 		for ( int j = startidx; j < endidx; j++ )
-			presult[i * numFrames + j] = pdbuf[ i * numFrames + j + idxoffset];
+			presult[i*numFrames + j] = pdbuf[i + (j - idxoffset)*numTrials];
 		for ( int j = endidx; j < numFrames; j++ )
-			presult[i * numFrames + j] = 0.0;
+			presult[i*numFrames + j] = 0.0;
 	}
 	result.resize( {numTrials, numFrames} );
+	cout << "RESULT: numTrials = " << result.request().shape[0] << "; numFrames = " << result.request().shape[1] << endl;
+	
+
 	return result;
 }

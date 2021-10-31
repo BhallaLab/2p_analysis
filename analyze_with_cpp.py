@@ -36,19 +36,45 @@ def main():
     parser.add_argument( "-ht", "--hit_trial_thresh",  type = float, help = "Optional: Threshold of percentage of hit trials that each session must have in order to count as significant PSTH response.", default = 30.0 )
     parser.add_argument( "--trace_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [87, 92], metavar = ("start_frame", "end frame")  )
     parser.add_argument( "--baseline_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [70, 80], metavar = ("start_frame", "end frame")  )
+    parser.add_argument( '-daf', '--display_all_frames', action='store_true', help='Flag: when set, it displays PSTH of all frames.' )
     args = parser.parse_args()
 
     t1 = time.time()
+    p2data, behavData = loadData( args )
+    t1 = reportMemoryUse( "Loaded and preprocessed all data", t1 )
+    if args.display_all_frames:
+        displayAllFrames( p2data )
+    
+
+def loadData( args ):
+    t1 = time.time()
     #pd.read_hdf("store_tl.h5", "table", where=["index>2"])
     mouseNames = pd.read_hdf(args.filename, "MouseNames")
+    #mouseNames = [["G405"]]
     #print( mouseNames )
     mdf = []
     for mn in mouseNames[0]:
         df1 = pd.read_hdf( args.filename, mn )
         idx = df1.index
         cs = fillCS( df1 )
+        #print( "CS LEN = {}, CS = {}".format( len( cs ), cs[:20] ) )
         #print( df )
+        '''
+        print( "BEFORE: ")
+        tempdf1 = np.array(df1.iloc[505010:505400, START_FRAME:END_FRAME])
+        mt1 = tempdf1.mean( axis = 1 )
+        plt.figure( num = "BEFORE")
+        plt.imshow( (tempdf1.transpose() / mt1).transpose() )
+        '''
         temp = a2p.alignAllFrames( df1.iloc[:, START_FRAME:END_FRAME], cs )
+        '''
+        print( "AFTER: ")
+        temp1 = temp[505010:505400, :] 
+        mt1 = temp1.mean( axis = 1 )
+        plt.figure( num = "AFTER")
+        plt.imshow( (temp1.transpose() / mt1).transpose() )
+        plt.show()
+        '''
         df = pd.DataFrame( temp, index = idx )
         df["csFrame"] = cs
         df["usFrame"] = cs + 5
@@ -71,17 +97,14 @@ def main():
     addColumns( p2data )
     t1 = reportMemoryUse( "adding columns", t1 )
 
-    #print( p2data )
-    #p2data.iloc[:, START_FRAME:END_FRAME] = a2p.alignAllFrames( p2data.iloc[:, START_FRAME:END_FRAME], p2data['csFrame'] )
-    #print( p2data )
-    #t1 = reportMemoryUse( "alignFrames", t1 )
-
     #sns.pairplot( dataset.loc['G141','20190913'][['prePk1','prePos1','csPk','csPkPos','postPk1','postPos1']], hue='csPk' )
     #displayPeakHisto( p2data, pkName = "csPk", posName = "csPkPos", numSdev = 3.0, hitRatio = 0.3, mouse = "G141", date = "20190913" )
 
     return p2data, behavData
 
 def estimateCS( gb ):
+    #plt.imshow( np.array( gb ) )
+    #plt.show()
     return a2p.estimateCS( np.array( gb ) )
 
 def expandCS( csScore, numCells ):
@@ -90,8 +113,8 @@ def expandCS( csScore, numCells ):
     CONFIDENCE_THRESH = 5.0
     unit = np.array( [i[0] for i in csScore] )
     confidence = np.array( [i[1] for i in csScore] )
-    unit[ confidence < CONFIDENCE_THRESH ] = 94
-    unit[ (unit < CS_MIN) | (unit > CS_MAX)] = 94
+    unit[ confidence < CONFIDENCE_THRESH ] = 92
+    unit[ (unit < CS_MIN) | (unit > CS_MAX)] = 97
     return np.tile( unit, numCells )
 
 def fillCS( df1 ):
@@ -99,6 +122,7 @@ def fillCS( df1 ):
     for date in df1.index.get_level_values(0).unique():
         df = df1.loc[date].iloc[:,START_FRAME:END_FRAME]
         numTrials = len( df[0][0] )
+        #print( "IN ESTIMATE CS for ", date )
         csScore = df.groupby( level = "trial" ).apply( estimateCS )
         cs.extend( expandCS( csScore, len(df)//numTrials ) )
     return np.array( cs )
@@ -149,7 +173,7 @@ def displayAllFrames( p2data, sortStartFrame = 40, sortEndFrame = -1 ):
     for mouse in p2data.index.levels[0]:
         for date in p2data.loc[mouse].index.get_level_values(0).unique():
             print( "Mouse = ", mouse, ", date = ", date )
-            displayPSTH( p2data, sortStartFrame = sortStartFrame, sortEndFrame = sortEndFrame, csFrame = p2data['csFrame'], mouse = mouse, date = date )
+            displayPSTH( p2data, sortStartFrame = sortStartFrame, sortEndFrame = sortEndFrame, csFrame = 94, mouse = mouse, date = date )
 
 
 def findAndIsolateFramePeak( dfbf2, startFrame, endFrame, halfWidth ):
@@ -244,11 +268,14 @@ def displayPSTH( df, sortStartFrame = 40, sortEndFrame = -1, csFrame = -1, mouse
     # I want to average all the sdevs for a given cell
     # idxmax gives the index of the max value of a colum.
     # I want to sort by idxmax. Not look up array by idxmax.
+    #plt.imshow( df.loc[ (mouse,date,1)].iloc[:, START_FRAME: END_FRAME] )
+    #plt.show()
     
     psth = df.loc[ (mouse, date)].iloc[:, START_FRAME: END_FRAME ].mean( axis = 0, level = 0 )
+    #print( psth )
     sdev = df.loc[(mouse, date)]["sdev"].mean( axis = 0, level = 0 )
     ratio = psth.div( sdev, axis = 0 )
-    print( "RATIO SHAPE  = ", ratio.shape )
+    #print( "RATIO SHAPE  = ", ratio.shape )
 
     # Check for csFrame as the one which has the highest peak 
     # averaged over all cells. Use this option if csFrame == -1.
@@ -259,16 +286,14 @@ def displayPSTH( df, sortStartFrame = 40, sortEndFrame = -1, csFrame = -1, mouse
             ratio.loc[:,csFrame] = 0    # blank out the biggest response.
         print( "{}/{} Max = {:.4f} at {};   Min = {}".format( mouse, date, mn.max(), mn.idxmax(), mn.min() ) )
     else:
-        ratio.loc[:,csFrame] = 0    # blank out the defined US response.
-        for i, j in enumerate( csFrame ): # Most unpanda
-            ratio[i, j] = 0
-
-    print( "sortStartFrame:sortEndFrame", sortStartFrame, sortEndFrame )
+        ratio.loc[:,csFrame] = 0    # blank out the defined CS response.
+        #for i, j in enumerate( csFrame ): # Most unpanda
+        #    ratio[i, j] = 0
 
     idxmax = ratio.iloc[:, sortStartFrame:sortEndFrame].idxmax( axis = 1 )
     sortedIdx = idxmax.sort_values().index
     sortedRatio = ratio.reindex( sortedIdx )
-    fig = plt.figure( figsize = (12,4 ))
+    fig = plt.figure( figsize = (12,12 ))
     #plt.imshow( np.log10( sortedRatio ) )
     plt.imshow( sortedRatio )
     plt.show()
