@@ -133,6 +133,38 @@ def analyzeBehaviour( behavData, p2data, args ):
     # Currently a placeholder.
     # Just put in better estimates for the trace period.
     #df = p2data.loc['G394','20210130'].iloc[:,START_FRAME:END_FRAME]
+    t1 = time.time()
+    #behavFiles = ["G394b.csv", "G396b.csv", "G404b.csv", "G405b.csv"]
+    behavFiles = ["G394b.csv", "G404b.csv", "G405b.csv"]
+
+    p2data['behaviour_code'] = "none"
+    p2data['behaviour_day'] = 0
+    for fname in behavFiles:
+        behavDict = {}
+        bf = pd.read_csv( "BEHAV_FILES/" + fname, sep= "," )
+        mn = fname[:-5]
+        # For each date, I want to collect behaviour_code and behavour_day
+        # Then pick unique dates. So dates will be a dict.
+        # Then assign that code/day to every trial/cell for that mouse/date
+        for index, row in bf.iterrows():
+            code = row['behaviour_code']
+            if code == "Hr6":
+                code = "Hr7"
+            behavDict[row['date']] = {"code":code, "day":row['behaviour_day']}
+        for date, val in behavDict.items():
+            sdate = str( date )
+            if p2data.index.isin([(mn, sdate, 0, 0)]).any():
+                p2data.loc[(mn, sdate),['behaviour_code', 'behaviour_day']] = [[val['code'], val['day']]]
+
+    t1 = reportMemoryUse( "Loaded Behaviour csvs", t1 )
+
+    # Check that this worked...
+    for fname in behavFiles:
+        mn = fname[:-5]
+        print( "MOOOOOOUUUUUUSSSSSSEEEEEEEYYYY = ", mn )
+        print( p2data.loc[mn] )
+            
+        
     '''
     df = p2data.loc['G404','20210304'].iloc[:,START_FRAME:END_FRAME]
     print( "DF SHAPE = ", df.shape )
