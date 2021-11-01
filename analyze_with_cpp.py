@@ -39,6 +39,7 @@ def main():
     parser.add_argument( "--baseline_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [70, 80], metavar = ("start_frame", "end frame")  )
     parser.add_argument( '-daf', '--display_all_frames', action='store_true', help='Flag: when set, it displays PSTH of all frames.' )
     parser.add_argument( '-dr', '--display_responders', type = str, help='Flag: when set, it displays responders in specified window: cs, pre, post' )
+    parser.add_argument( '-dns', '--display_normalized_stats', action='store_true', help='Flag: when set, it displays baseline corrected stats of responding cells.' )
     args = parser.parse_args()
 
     t1 = time.time()
@@ -49,6 +50,9 @@ def main():
 
     if args.display_responders:
         responderStats( p2data, args.display_responders )
+
+    if args.display_normalized_stats:
+        normalizedStats( p2data )
     
 
 def loadData( args ):
@@ -365,6 +369,128 @@ def boilerPlate( label ):
     ax2.set_ylabel( quant + " of " + label + "s" )
     return ax1, ax2
 
+def normalizedStats( df ):
+    t1 = time.time()
+    hFramesPre, hSessionsPre = innerResponderStats( df, 'pre' )
+    t1 = reportMemoryUse( "innerResponderStats Pre", t1 )
+    hFramesPost, hSessionsPost = innerResponderStats( df, 'post' )
+    t1 = reportMemoryUse( "innerResponderStats Post", t1 )
+    mouseVec = df.index.levels[0]
+
+    ax1, ax2 = boilerPlate( "Responsive Cell" )
+
+    framesMean = np.zeros( len( hFramesPost[0] ) )
+    for mouse, i, j in zip( mouseVec, hFramesPre, hFramesPost ):
+        k = j - i.mean()
+        # plot it
+        ax2.plot( range( len( k ) ), k, label = mouse )
+        # Average it
+        framesMean += k
+    framesMean /= len( mouseVec )
+    ax2.plot( range( len( framesMean ) ), framesMean, label = "Mean", linewidth = 4 )
+
+    numSess = min( [ len( s ) for s in (hSessionsPost + hSessionsPre) ] )
+    print ("NUM SESS =", numSess )
+    sessionsMean = np.zeros( numSess )
+    for mouse, i, j in zip( mouseVec, hSessionsPre, hSessionsPost ):
+        k = j[:numSess] - i[:numSess]
+        # plot it
+        ax1.plot( range( len( k ) ), k, label = mouse )
+        #Average it
+        sessionsMean += k
+    sessionsMean /= len( mouseVec )
+    ax1.plot( range( len( sessionsMean ) ), sessionsMean, label = "Mean", linewidth = 4 )
+
+    ax1.legend()
+    ax2.legend()
+    plt.tight_layout()
+    plt.show()
+
+def innerResponderStats( df, window, sigThresh = 5.0, hitSigThresh = 2.5, hitThresh = 0.15):
+    NUM_SESSIONS = 25
+    pk = "csPk"
+    pos = "csPos"
+    startFrame = 95
+    endFrame = 98
+    hitKernel = np.array( [0.67, 1.0, 0.67] )
+    if window == "pre":
+        pk = "prePk"
+        pos = "prePos"
+        startFrame = 40
+        endFrame = 93
+        hitKernel = np.array( [0.6, 0.8, 1.0, 0.8, 0.6] )
+    elif window == "post":
+        pk = "postPk"
+        pos = "postPos"
+        startFrame = 98
+        endFrame = END_FRAME
+        hitKernel = np.array( [0.6, 0.8, 1.0, 0.8, 0.6] )
+    '''
+    Report 
+        - fraction of cells responding (in a given window?),
+            - Criteria for response: ampl, hit trial rate, window.
+        - Hit trial rate
+        - Mean Amplitude of response
+            - Overall mean
+            - Mean when it is a hit trial.
+        - Tau of response
+    '''
+    # This gives indices of pks above thresh for each trial.
+    pkRange = df[pos].max() + 1
+    # Shape it by dat[ dates, bins ]
+    bins = range( pkRange +1 )
+
+    bigPkIdx = df[pos][ (df[pk]/df["sdev"]) > sigThresh ]
+    hitPkIdx = df[pos][ (df[pk]/df["sdev"]) > hitSigThresh ]
+    hitHistoSum = np.zeros( NUM_SESSIONS )
+    histoMean = np.zeros( NUM_SESSIONS )
+
+    print( "IDX means = ", bigPkIdx.mean(), hitPkIdx.mean() )
+    #I'm sure there is a clean way to get the num of dates for each mouse.
+    # Need to normalize by number of cells.
+    hframes = []
+    hsessions = []
+    for mousenum, mouse in enumerate( df.index.levels[0] ):
+        print( "MOUSE = ", mouse )
+        mdf = df.loc[mouse]
+        numTrials = mdf.index.levshape[-1]
+        dates = mdf.index.unique( level = "date" )
+        histo = np.zeros( (len( dates ), pkRange ) )
+        hitHisto = np.zeros( (len( dates ), pkRange ) )
+        for i, date in enumerate( dates ):
+            bp = bigPkIdx.loc[mouse, date]
+            hp = hitPkIdx.loc[mouse, date]
+            numCells = mdf.loc[date, :, 0].shape[0]
+            assert( numCells > 0 )
+            increment = 100.0 / (numTrials * numCells) # Get %.
+            for b in bp:    # iterating over all cells * all trails. 'b' is the frame index of pk
+                histo[i, b] += increment
+            for cell in hp.index.unique( level = "cell" ):
+                hits = np.histogram( hp.loc[cell], bins )
+                # Now apply a convolution across the hits to smooth it out.
+                smoothHits = np.convolve( hits[0], hitKernel, mode = "same" )
+                hitHisto[i] += (smoothHits > hitThresh*numTrials )
+            # innerHitHisto[ cell#, frame# ]
+            # Here we can threshold innerHitHisto to find a time cell, and its frame.
+            # Would like a raster of verified time cells for each session.
+
+        histo = histo[:,startFrame:endFrame]
+        hitHisto = hitHisto[:,startFrame:endFrame]
+        hs1 = np.sum( hitHisto, axis = 1 )
+        if len( hs1 ) > NUM_SESSIONS:
+            hitHistoSum += hs1[:NUM_SESSIONS]
+        else:
+            hitHistoSum[:len( hs1 )] += hs1
+        hs3 = np.sum( histo, axis = 1 )
+        if len( hs3 ) > NUM_SESSIONS:
+            histoMean += hs3[:NUM_SESSIONS]
+        else:
+            histoMean[:len( hs3 )] += hs3
+
+        hframes.append( np.sum( histo, axis = 0 ) )
+        hsessions.append( np.sum( histo, axis = 1 ) )
+
+    return hframes, hsessions
 
 def responderStats( df, window, sigThresh = 5.0, hitSigThresh = 2.5, hitThresh = 0.15):
     NUM_SESSIONS = 25
