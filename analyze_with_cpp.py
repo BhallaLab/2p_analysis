@@ -38,8 +38,9 @@ def main():
     parser.add_argument( "--trace_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [87, 92], metavar = ("start_frame", "end frame")  )
     parser.add_argument( "--baseline_frames", type = float, nargs = 2, help = "Optional: start_frame end_frame.", default = [70, 80], metavar = ("start_frame", "end frame")  )
     parser.add_argument( '-daf', '--display_all_frames', action='store_true', help='Flag: when set, it displays PSTH of all frames.' )
-    parser.add_argument( '-dr', '--display_responders', type = str, help='Flag: when set, it displays responders in specified window: cs, pre, post' )
+    parser.add_argument( '-dr', '--display_responders', type = str, help='Displays responders in specified window: cs, pre, post' )
     parser.add_argument( '-dns', '--display_normalized_stats', action='store_true', help='Flag: when set, it displays baseline corrected stats of responding cells.' )
+    parser.add_argument( '-m', '--mouse', type = str, help='Select specific mouse to analyze. Default is to analyze all mice in hdf5 file.' )
     args = parser.parse_args()
 
     t1 = time.time()
@@ -58,11 +59,13 @@ def main():
 def loadData( args ):
     t1 = time.time()
     #pd.read_hdf("store_tl.h5", "table", where=["index>2"])
-    mouseNames = pd.read_hdf(args.filename, "MouseNames")
+    mouseNamesDf = pd.read_hdf(args.filename, "MouseNames")
     #mouseNames = [["G405"]]
-    #print( mouseNames )
+    mouseNames = mouseNamesDf[0].tolist()
     mdf = []
-    for mn in mouseNames[0]:
+    if args.mouse and args.mouse in mouseNames:
+        mouseNames = [args.mouse]
+    for mn in mouseNames:
         df1 = pd.read_hdf( args.filename, mn )
         idx = df1.index
         cs = fillCS( df1 )
@@ -91,7 +94,7 @@ def loadData( args ):
         #print( df['usFrame'][:20], cs[:20] )
         mdf.append( df )
         t1 = reportMemoryUse( mn, t1 )
-    p2data = pd.concat( mdf, keys = mouseNames[0], names = ["mouse", "date", "cell", "trial"] )
+    p2data = pd.concat( mdf, keys = mouseNames, names = ["mouse", "date", "cell", "trial"] )
     #print( "COOOOOOOOOOLUMN names = ", p2data.columns.values.tolist( ) )
     t1 = reportMemoryUse( "Loading", t1 )
 
@@ -334,6 +337,8 @@ def displayPSTH( df, sortStartFrame = 40, sortEndFrame = -1, csFrame = -1, mouse
     fig = plt.figure( figsize = (12,12 ))
     #plt.imshow( np.log10( sortedRatio ) )
     plt.imshow( sortedRatio )
+    cbar = plt.colorbar()
+    cbar.solids.set_edgecolor("face")
     plt.show()
 
 hasBar = False
